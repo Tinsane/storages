@@ -2,7 +2,7 @@ package gcs
 
 import (
 	"context"
-	"github.com/tinsane/storages/storage"
+	"github.com/Tinsane/storages/storage"
 	"github.com/tinsane/tracelog"
 	"io"
 	"io/ioutil"
@@ -134,9 +134,7 @@ func (folder *Folder) GetSubFolder(subFolderRelativePath string) storage.Folder 
 func (folder *Folder) ReadObject(objectRelativePath string) (io.ReadCloser, error) {
 	path := storage.JoinPath(folder.path, objectRelativePath)
 	object := folder.bucket.Object(path)
-	ctx, cancel := folder.createTimeoutContext()
-	defer cancel()
-	reader, err := object.NewReader(ctx)
+	reader, err := object.NewReader(context.Background())
 	if err == gcs.ErrObjectNotExist {
 		return nil, storage.NewObjectNotFoundError(path)
 	}
