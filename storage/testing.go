@@ -1,8 +1,10 @@
 package storage
 
 import (
+	"bytes"
 	"github.com/stretchr/testify/assert"
 	"io/ioutil"
+	"math/rand"
 	"strings"
 	"testing"
 )
@@ -10,8 +12,17 @@ import (
 func RunFolderTest(storageFolder Folder, t *testing.T) {
 	sub1 := storageFolder.GetSubFolder("Sub1")
 
-	err := storageFolder.PutObject("file0", strings.NewReader("data0"))
+	token := make([]byte, 1024*1024) //Send 1 Mb
+	rand.Read(token)
+
+	err := storageFolder.PutObject("file0", bytes.NewBuffer(token))
 	assert.NoError(t, err)
+
+	readCloser, err := storageFolder.ReadObject("file0")
+	assert.NoError(t, err)
+	all, err := ioutil.ReadAll(readCloser)
+	assert.NoError(t, err)
+	assert.Equal(t, all, token)
 
 	err = sub1.PutObject("file1", strings.NewReader("data1"))
 	assert.NoError(t, err)
