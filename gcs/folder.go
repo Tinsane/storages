@@ -2,7 +2,7 @@ package gcs
 
 import (
 	"context"
-	"github.com/Tinsane/storages/storage"
+	"github.com/tinsane/storages/storage"
 	"github.com/tinsane/tracelog"
 	"io"
 	"io/ioutil"
