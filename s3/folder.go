@@ -28,6 +28,7 @@ const (
 	StorageClassSetting      = "S3_STORAGE_CLASS"
 	UploadConcurrencySetting = "UPLOAD_CONCURRENCY"
 	s3CertFile               = "S3_CA_CERT_FILE"
+	MaxPartSize              = "S3_MAX_PART_SIZE"
 )
 
 var (
@@ -47,6 +48,7 @@ var (
 		StorageClassSetting,
 		UploadConcurrencySetting,
 		s3CertFile,
+		MaxPartSize,
 	}
 )
 
