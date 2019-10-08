@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	DefaultStreamingPartSize = 20 << 20
+	DefaultMaxPartSize = 20 << 20
 )
 
 type SseKmsIdNotSetError struct {
@@ -115,7 +115,18 @@ func configureUploader(s3Client *s3.S3, settings map[string]string) (*Uploader, 
 	} else {
 		return nil, NewConfiguringError(UploadConcurrencySetting)
 	}
-	uploaderApi := CreateUploaderAPI(s3Client, DefaultStreamingPartSize, concurrency)
+
+	var maxPartSize int
+	if strMaxPartSize, ok := settings[MaxPartSize]; ok {
+		maxPartSize, err = strconv.Atoi(strMaxPartSize)
+		if err != nil {
+			return nil, NewFolderError(err, "Invalid s3 max part size setting")
+		}
+	} else {
+		maxPartSize = DefaultMaxPartSize
+	}
+
+	uploaderApi := CreateUploaderAPI(s3Client, maxPartSize, concurrency)
 
 	serverSideEncryption, sseKmsKeyId, err := configureServerSideEncryption(settings)
 	if err != nil {
