@@ -3,13 +3,14 @@ package azure
 import (
 	"context"
 	"fmt"
-	"github.com/tinsane/storages/storage"
-	"github.com/tinsane/tracelog"
 	"io"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/tinsane/storages/storage"
+	"github.com/tinsane/tracelog"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/pkg/errors"
@@ -20,10 +21,12 @@ const (
 	AccessKeySetting  = "AZURE_STORAGE_ACCESS_KEY"
 	BufferSizeSetting = "AZURE_BUFFER_SIZE"
 	MaxBuffersSetting = "AZURE_MAX_BUFFERS"
+	TryTimeoutSetting = "AZURE_TRY_TIMEOUT"
 	minBufferSize     = 1024
 	defaultBufferSize = 64 * 1024 * 1024
 	minBuffers        = 1
 	defaultBuffers    = 3
+	defaultTryTimeout = 5
 )
 
 var SettingList = []string{
@@ -62,7 +65,18 @@ func ConfigureFolder(prefix string, settings map[string]string) (storage.Folder,
 	if err != nil {
 		return nil, NewFolderError(err, "Unable to create credentials")
 	}
-	pipeLine := azblob.NewPipeline(credential, azblob.PipelineOptions{})
+
+	var tryTimeout int
+	if strTryTimeout, ok := settings[TryTimeoutSetting]; ok {
+		tryTimeout, err = strconv.Atoi(strTryTimeout)
+		if err != nil {
+			return nil, NewFolderError(err, "Invalid azure try timeout setting")
+		}
+	} else {
+		tryTimeout = defaultTryTimeout
+	}
+
+	pipeLine := azblob.NewPipeline(credential, azblob.PipelineOptions{Retry: azblob.RetryOptions{TryTimeout: time.Duration(tryTimeout) * time.Minute}})
 	containerName, path, err := storage.GetPathFromPrefix(prefix)
 	if err != nil {
 		return nil, NewFolderError(err, "Unable to create container")
