@@ -24,6 +24,20 @@ func AddDelimiterToPath(path string) string {
 
 // TODO : unit tests
 func GetPathFromPrefix(prefix string) (bucket, server string, err error) {
+	bucket, server, err = ParsePrefixAsURL(prefix);
+	if err != nil {
+		return "", "", err
+	}
+
+	// Allover the code this parameter is concatenated with '/'.
+	// TODO: Get rid of numerous string literals concatenated with this
+	server = strings.Trim(server, "/")
+
+	return bucket, server, nil
+}
+
+// TODO : unit tests
+func ParsePrefixAsURL(prefix string) (bucket, server string, err error) {
 	storageUrl, err := url.Parse(prefix)
 	if err != nil {
 		return "", "", errors.Wrapf(err, "failed to parse url '%s'", prefix)
@@ -32,11 +46,5 @@ func GetPathFromPrefix(prefix string) (bucket, server string, err error) {
 		return "", "", errors.Errorf("missing url scheme=%q and/or host=%q", storageUrl.Scheme, storageUrl.Host)
 	}
 
-	bucket = storageUrl.Host
-	server = strings.TrimPrefix(storageUrl.Path, "/")
-
-	// Allover the code this parameter is concatenated with '/'.
-	// TODO: Get rid of numerous string literals concatenated with this
-	server = strings.TrimSuffix(server, "/")
-	return bucket, server, nil
+	return storageUrl.Host, storageUrl.Path, nil
 }
