@@ -29,6 +29,7 @@ const (
 	UploadConcurrencySetting = "UPLOAD_CONCURRENCY"
 	s3CertFile               = "S3_CA_CERT_FILE"
 	MaxPartSize              = "S3_MAX_PART_SIZE"
+	EndpointSourceSetting    = "S3_ENDPOINT_SOURCE"
 )
 
 var (
@@ -36,6 +37,7 @@ var (
 	MaxRetries  = 15
 	SettingList = []string{
 		EndpointSetting,
+		EndpointSourceSetting,
 		RegionSetting,
 		ForcePathStyleSetting,
 		AccessKeyIdSetting,
