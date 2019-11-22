@@ -2,7 +2,7 @@ package fs
 
 import (
 	"github.com/stretchr/testify/assert"
-	"github.com/tinsane/storages/storage"
+	"github.com/wal-g/storages/storage"
 	"io/ioutil"
 	"os"
 	"path/filepath"

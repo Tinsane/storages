@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tinsane/storages/storage"
+	"github.com/wal-g/storages/storage"
 	"github.com/tinsane/tracelog"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"

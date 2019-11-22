@@ -1,7 +1,7 @@
 package gcs
 
 import (
-	"github.com/tinsane/storages/storage"
+	"github.com/wal-g/storages/storage"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
