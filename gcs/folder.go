@@ -2,8 +2,9 @@ package gcs
 
 import (
 	"context"
-	"github.com/wal-g/storages/storage"
+	"github.com/pkg/errors"
 	"github.com/tinsane/tracelog"
+	"github.com/wal-g/storages/storage"
 	"io"
 	"io/ioutil"
 	"strconv"
@@ -16,6 +17,7 @@ import (
 
 const (
 	ContextTimeout        = "GCS_CONTEXT_TIMEOUT"
+	NormalizePrefix       = "GCS_EXACT_PREFIX"
 	defaultContextTimeout = 60 * 60 // 1 hour
 )
 
@@ -27,11 +29,20 @@ func NewError(err error, format string, args ...interface{}) storage.Error {
 	return storage.NewError(err, "GCS", format, args...)
 }
 
-func NewFolder(bucket *gcs.BucketHandle, path string, contextTimeout int) *Folder {
-	return &Folder{bucket, path, contextTimeout}
+func NewFolder(bucket *gcs.BucketHandle, path string, contextTimeout int, normalizePrefix bool) *Folder {
+	return &Folder{bucket, path, contextTimeout, normalizePrefix}
 }
 
 func ConfigureFolder(prefix string, settings map[string]string) (storage.Folder, error) {
+	normalizePrefix := true
+
+	if normalizePrefixStr, ok := settings[NormalizePrefix]; ok {
+		var err error
+		normalizePrefix, err = strconv.ParseBool(normalizePrefixStr)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to parse %s", NormalizePrefix)
+		}
+	}
 
 	ctx := context.Background()
 
@@ -40,7 +51,17 @@ func ConfigureFolder(prefix string, settings map[string]string) (storage.Folder,
 		return nil, NewError(err, "Unable to create client")
 	}
 
-	bucketName, path, err := storage.GetPathFromPrefix(prefix)
+	var bucketName, path string
+	if normalizePrefix {
+		bucketName, path, err = storage.GetPathFromPrefix(prefix)
+	} else {
+		// Special mode for WAL-E compatibility with strange prefixes
+		bucketName, path, err = storage.ParsePrefixAsURL(prefix)
+		if err == nil && path[0] == '/' {
+			path = path[1:]
+		}
+	}
+
 	if err != nil {
 		return nil, NewError(err, "Unable to parse prefix %v", prefix)
 	}
@@ -56,14 +77,15 @@ func ConfigureFolder(prefix string, settings map[string]string) (storage.Folder,
 			return nil, NewError(err, "Unable to parse Context Timeout %v", prefix)
 		}
 	}
-	return NewFolder(bucket, path, contextTimeout), nil
+	return NewFolder(bucket, path, contextTimeout, normalizePrefix), nil
 }
 
 // Folder represents folder in GCP
 type Folder struct {
-	bucket         *gcs.BucketHandle
-	path           string
-	contextTimeout int
+	bucket          *gcs.BucketHandle
+	path            string
+	contextTimeout  int
+	normalizePrefix bool
 }
 
 func (folder *Folder) GetPath() string {
@@ -84,7 +106,11 @@ func (folder *Folder) ListFolder() (objects []storage.Object, subFolders []stora
 			return nil, nil, NewError(err, "Unable to iterate %v", folder.path)
 		}
 		if objAttrs.Prefix != "" {
-			subFolders = append(subFolders, NewFolder(folder.bucket, objAttrs.Prefix, folder.contextTimeout))
+
+			if objAttrs.Prefix != prefix+"/" {
+				// Sometimes GCS returns "//" folder - skip it
+				subFolders = append(subFolders, NewFolder(folder.bucket, objAttrs.Prefix, folder.contextTimeout, folder.normalizePrefix))
+			}
 		} else {
 			objName := strings.TrimPrefix(objAttrs.Name, prefix)
 			objects = append(objects, storage.NewLocalObject(objName, objAttrs.Updated))
@@ -99,7 +125,7 @@ func (folder *Folder) createTimeoutContext() (context.Context, context.CancelFun
 
 func (folder *Folder) DeleteObjects(objectRelativePaths []string) error {
 	for _, objectRelativePath := range objectRelativePaths {
-		path := storage.JoinPath(folder.path, objectRelativePath)
+		path := folder.joinPath(folder.path, objectRelativePath)
 		object := folder.bucket.Object(path)
 		tracelog.DebugLogger.Printf("Delete %v\n", path)
 		ctx, cancel := folder.createTimeoutContext()
@@ -113,7 +139,7 @@ func (folder *Folder) DeleteObjects(objectRelativePaths []string) error {
 }
 
 func (folder *Folder) Exists(objectRelativePath string) (bool, error) {
-	path := storage.JoinPath(folder.path, objectRelativePath)
+	path := folder.joinPath(folder.path, objectRelativePath)
 	object := folder.bucket.Object(path)
 	ctx, cancel := folder.createTimeoutContext()
 	defer cancel()
@@ -128,11 +154,11 @@ func (folder *Folder) Exists(objectRelativePath string) (bool, error) {
 }
 
 func (folder *Folder) GetSubFolder(subFolderRelativePath string) storage.Folder {
-	return NewFolder(folder.bucket, storage.JoinPath(folder.path, subFolderRelativePath), folder.contextTimeout)
+	return NewFolder(folder.bucket, folder.joinPath(folder.path, subFolderRelativePath), folder.contextTimeout, folder.normalizePrefix)
 }
 
 func (folder *Folder) ReadObject(objectRelativePath string) (io.ReadCloser, error) {
-	path := storage.JoinPath(folder.path, objectRelativePath)
+	path := folder.joinPath(folder.path, objectRelativePath)
 	object := folder.bucket.Object(path)
 	reader, err := object.NewReader(context.Background())
 	if err == gcs.ErrObjectNotExist {
@@ -143,7 +169,7 @@ func (folder *Folder) ReadObject(objectRelativePath string) (io.ReadCloser, erro
 
 func (folder *Folder) PutObject(name string, content io.Reader) error {
 	tracelog.DebugLogger.Printf("Put %v into %v\n", name, folder.path)
-	object := folder.bucket.Object(storage.JoinPath(folder.path, name))
+	object := folder.bucket.Object(folder.joinPath(folder.path, name))
 	ctx, cancel := folder.createTimeoutContext()
 	defer cancel()
 	writer := object.NewWriter(ctx)
@@ -157,4 +183,17 @@ func (folder *Folder) PutObject(name string, content io.Reader) error {
 		return NewError(err, "Unable to Close object")
 	}
 	return nil
+}
+
+func (folder *Folder) joinPath(one string, another string) string {
+	if folder.normalizePrefix {
+		return storage.JoinPath(one, another)
+	}
+	if one[len(one)-1] == '/' {
+		one = one[:len(one)-1]
+	}
+	if another[0] == '/' {
+		another = another[1:]
+	}
+	return one + "/" + another
 }
