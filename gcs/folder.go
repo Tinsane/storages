@@ -17,7 +17,7 @@ import (
 
 const (
 	ContextTimeout        = "GCS_CONTEXT_TIMEOUT"
-	NormalizePrefix       = "GCS_EXACT_PREFIX"
+	NormalizePrefix       = "GCS_NORMALIZE_PREFIX"
 	defaultContextTimeout = 60 * 60 // 1 hour
 )
 
