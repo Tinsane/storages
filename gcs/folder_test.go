@@ -21,8 +21,13 @@ func TestGSFolder(t *testing.T) {
 func TestGSExactFolder(t *testing.T) {
 	t.Skip("Credentials needed to run GCP tests")
 
-	storageFolder, err := ConfigureFolderWithExactPrefix("gs://x4m-test//walg-bucket////strange_folder",
-		nil)
+	//os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "/Users/x4mmm/Downloads/mdb-tests-d0uble-0b98813b622b.json")
+	//os.Setenv("GCS_CONTEXT_TIMEOUT", "1024000000")
+
+	storageFolder, err := ConfigureFolder("gs://x4m-test//walg-bucket////strange_folder",
+		map[string]string{
+			NormalizePrefix: "false",
+		})
 
 	assert.NoError(t, err)
 

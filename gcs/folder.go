@@ -2,6 +2,7 @@ package gcs
 
 import (
 	"context"
+	"github.com/pkg/errors"
 	"github.com/tinsane/tracelog"
 	"github.com/wal-g/storages/storage"
 	"io"
@@ -16,6 +17,7 @@ import (
 
 const (
 	ContextTimeout        = "GCS_CONTEXT_TIMEOUT"
+	NormalizePrefix       = "GCS_EXACT_PREFIX"
 	defaultContextTimeout = 60 * 60 // 1 hour
 )
 
@@ -32,14 +34,15 @@ func NewFolder(bucket *gcs.BucketHandle, path string, contextTimeout int, normal
 }
 
 func ConfigureFolder(prefix string, settings map[string]string) (storage.Folder, error) {
-	return configureFolder(prefix, settings, true);
-}
+	normalizePrefix := true
 
-func ConfigureFolderWithExactPrefix(prefix string, settings map[string]string) (storage.Folder, error) {
-	return configureFolder(prefix, settings, false);
-}
-
-func configureFolder(prefix string, settings map[string]string, normalizePrefix bool) (storage.Folder, error) {
+	if normalizePrefixStr, ok := settings[NormalizePrefix]; ok {
+		var err error
+		normalizePrefix, err = strconv.ParseBool(normalizePrefixStr)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to parse %s", NormalizePrefix)
+		}
+	}
 
 	ctx := context.Background()
 
