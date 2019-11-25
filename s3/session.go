@@ -7,6 +7,9 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/pkg/errors"
+	"github.com/tinsane/tracelog"
+	"io/ioutil"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -83,6 +86,20 @@ func createSession(bucket string, settings map[string]string) (*session.Session,
 
 	if endpoint, ok := settings[EndpointSetting]; ok {
 		config.Endpoint = aws.String(endpoint)
+	}
+
+	if endpointSource, ok := settings[EndpointSourceSetting]; ok {
+		resp, err := http.Get(endpointSource)
+		if err != nil || resp.StatusCode != 200 || resp.Body == nil {
+			tracelog.ErrorLogger.Println("Endpoint source error:", err, " status code:", resp.StatusCode)
+		} else {
+			bytes, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				tracelog.ErrorLogger.Println("Endpoint source reading error:", err)
+			} else {
+				config.Endpoint = aws.String(string(bytes))
+			}
+		}
 	}
 
 	if s3ForcePathStyleStr, ok := settings[ForcePathStyleSetting]; ok {
