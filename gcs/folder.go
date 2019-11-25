@@ -23,6 +23,7 @@ const (
 
 var SettingList = []string{
 	ContextTimeout,
+	NormalizePrefix,
 }
 
 func NewError(err error, format string, args ...interface{}) storage.Error {
