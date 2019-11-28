@@ -4,13 +4,21 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/defaults"
+	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/pkg/errors"
+	"github.com/tinsane/tracelog"
+	"io/ioutil"
+	"net"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
 )
+
+const DefaultPort = "443"
+const HTTP = "http"
 
 // TODO : unit tests
 // Given an S3 bucket name, attempt to determine its region
@@ -54,6 +62,21 @@ func getAWSRegion(s3Bucket string, config *aws.Config, settings map[string]strin
 	}
 }
 
+func setupReqProxy(endpointSource, port string) *string {
+	resp, err := http.Get(endpointSource)
+	if err != nil || resp.StatusCode != 200 || resp.Body == nil {
+		tracelog.ErrorLogger.Println("Endpoint source error:", err, " status code:", resp.StatusCode)
+		return nil
+	}
+	bytes, err := ioutil.ReadAll(resp.Body)
+	if err == nil {
+		return aws.String(net.JoinHostPort(string(bytes), port))
+	}
+	tracelog.ErrorLogger.Println("Endpoint source reading error:", err)
+	return nil
+}
+
+
 func getDefaultConfig(settings map[string]string) *aws.Config {
 	config := defaults.Get().Config.
 		WithRegion(settings[RegionSetting])
@@ -70,7 +93,13 @@ func getDefaultConfig(settings map[string]string) *aws.Config {
 		VerboseErrors: aws.BoolValue(config.CredentialsChainVerboseErrors),
 		Providers:     providers,
 	})
-	return config.WithCredentials(newCredentials)
+
+	config = config.WithCredentials(newCredentials)
+
+	if endpoint, ok := settings[EndpointSetting]; ok {
+		config = config.WithEndpoint(endpoint)
+	}
+	return config
 }
 
 // TODO : unit tests
@@ -79,10 +108,6 @@ func createSession(bucket string, settings map[string]string) (*session.Session,
 	config.MaxRetries = &MaxRetries
 	if _, err := config.Credentials.Get(); err != nil {
 		return nil, errors.Wrapf(err, "failed to get AWS credentials; please specify %s and %s", AccessKeyIdSetting, SecretAccessKeySetting)
-	}
-
-	if endpoint, ok := settings[EndpointSetting]; ok {
-		config.Endpoint = aws.String(endpoint)
 	}
 
 	if s3ForcePathStyleStr, ok := settings[ForcePathStyleSetting]; ok {
@@ -103,11 +128,38 @@ func createSession(bucket string, settings map[string]string) (*session.Session,
 	if filePath != "" {
 		if file, err := os.Open(filePath); err == nil {
 			defer file.Close()
-			return session.NewSessionWithOptions(session.Options{Config: *config, CustomCABundle: file})
+			s, err := session.NewSessionWithOptions(session.Options{Config: *config, CustomCABundle: file})
+			return s, err
 		} else {
 			return nil, err
 		}
 	}
 
-	return session.NewSession(config)
+	s, err := session.NewSession(config)
+
+	if err != nil {
+		return nil, err
+	}
+	if endpointSource, ok := settings[EndpointSourceSetting]; ok {
+		s.Handlers.Validate.PushBack(func(request *request.Request) {
+			src := setupReqProxy(endpointSource, getEndpointPort(settings))
+			if src != nil {
+				host := strings.TrimPrefix(*config.Endpoint, "https://")
+				request.HTTPRequest.Host = host
+				request.HTTPRequest.Header.Add("Host", host)
+				request.HTTPRequest.URL.Host = *src
+				request.HTTPRequest.URL.Scheme = HTTP
+			} else {
+				request.HTTPRequest.URL.Host = *config.Endpoint
+			}
+		})
+	}
+	return s, err
+}
+
+func getEndpointPort(settings map[string]string) string {
+	if port, ok := settings[EndpointPortSetting]; ok {
+		return port
+	}
+	return DefaultPort
 }

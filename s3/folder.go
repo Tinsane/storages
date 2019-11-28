@@ -29,13 +29,17 @@ const (
 	UploadConcurrencySetting = "UPLOAD_CONCURRENCY"
 	s3CertFile               = "S3_CA_CERT_FILE"
 	MaxPartSize              = "S3_MAX_PART_SIZE"
+	EndpointSourceSetting    = "S3_ENDPOINT_SOURCE"
+	EndpointPortSetting      = "S3_ENDPOINT_PORT"
 )
 
 var (
 	// MaxRetries limit upload and download retries during interaction with S3
 	MaxRetries  = 15
 	SettingList = []string{
+		EndpointPortSetting,
 		EndpointSetting,
+		EndpointSourceSetting,
 		RegionSetting,
 		ForcePathStyleSetting,
 		AccessKeyIdSetting,
@@ -75,14 +79,15 @@ type Folder struct {
 	S3API    s3iface.S3API
 	Bucket   *string
 	Path     string
+	settings map[string]string
 }
 
 func NewFolder(uploader Uploader, s3API s3iface.S3API, bucket, path string) *Folder {
 	return &Folder{
-		uploader,
-		s3API,
-		aws.String(bucket),
-		storage.AddDelimiterToPath(path),
+		uploader: uploader,
+		S3API:    s3API,
+		Bucket:   aws.String(bucket),
+		Path:     storage.AddDelimiterToPath(path),
 	}
 }
 
@@ -101,6 +106,7 @@ func ConfigureFolder(prefix string, settings map[string]string) (storage.Folder,
 		return nil, errors.Wrap(err, "failed to configure S3 uploader")
 	}
 	folder := NewFolder(*uploader, client, bucket, path)
+	folder.settings = settings
 	return folder, nil
 }
 
