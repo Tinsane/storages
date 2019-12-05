@@ -12,7 +12,7 @@ func TestS3Folder(t *testing.T) {
 	waleS3Prefix := "s3://test-bucket/wal-g-test-folder/Sub0"
 	storageFolder, err := ConfigureFolder(waleS3Prefix,
 		map[string]string{
-			EndpointSetting: "HTTP://s3.mdst.yandex.net/",
+			EndpointSetting: "HTTP://s3.kek.lol.net/",
 		})
 
 	assert.NoError(t, err)

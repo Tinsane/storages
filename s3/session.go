@@ -64,10 +64,15 @@ func getAWSRegion(s3Bucket string, config *aws.Config, settings map[string]strin
 
 func setupReqProxy(endpointSource, port string) *string {
 	resp, err := http.Get(endpointSource)
-	if err != nil || resp.StatusCode != 200 || resp.Body == nil {
-		tracelog.ErrorLogger.Println("Endpoint source error:", err, " status code:", resp.StatusCode)
+	if err != nil {
+		tracelog.ErrorLogger.Printf("Endpoint source error: %v ", err)
 		return nil
 	}
+	if resp.StatusCode != 200 {
+		tracelog.ErrorLogger.Printf("Endpoint source bad status code: %v ", resp.StatusCode)
+		return nil
+	}
+	defer resp.Body.Close()
 	bytes, err := ioutil.ReadAll(resp.Body)
 	if err == nil {
 		return aws.String(net.JoinHostPort(string(bytes), port))
@@ -144,13 +149,14 @@ func createSession(bucket string, settings map[string]string) (*session.Session,
 		s.Handlers.Validate.PushBack(func(request *request.Request) {
 			src := setupReqProxy(endpointSource, getEndpointPort(settings))
 			if src != nil {
+				tracelog.InfoLogger.Printf("using endpoint %s", *src)
 				host := strings.TrimPrefix(*config.Endpoint, "https://")
 				request.HTTPRequest.Host = host
 				request.HTTPRequest.Header.Add("Host", host)
 				request.HTTPRequest.URL.Host = *src
 				request.HTTPRequest.URL.Scheme = HTTP
 			} else {
-				request.HTTPRequest.URL.Host = *config.Endpoint
+				tracelog.InfoLogger.Printf("using endpoint %s", *config.Endpoint)
 			}
 		})
 	}
