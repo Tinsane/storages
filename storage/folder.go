@@ -40,7 +40,7 @@ func DeleteObjectsWhere(folder Folder, confirm bool, filter func(object1 Object)
 			tracelog.InfoLogger.Println("\twill be deleted: " + object.GetName())
 			filteredRelativePaths = append(filteredRelativePaths, object.GetName())
 		} else {
-			tracelog.InfoLogger.Println("\tskipped: " + object.GetName())
+			tracelog.DebugLogger.Println("\tskipped: " + object.GetName())
 		}
 	}
 	if len(filteredRelativePaths) == 0 {
