@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/wal-g/storages/storage"
-	"github.com/tinsane/tracelog"
+	"github.com/wal-g/tracelog"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/pkg/errors"

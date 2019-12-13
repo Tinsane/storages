@@ -1,7 +1,7 @@
 package storage
 
 import (
-	"github.com/tinsane/tracelog"
+	"github.com/wal-g/tracelog"
 	"io"
 	"path"
 	"strings"
