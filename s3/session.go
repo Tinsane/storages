@@ -152,14 +152,14 @@ func createSession(bucket string, settings map[string]string) (*session.Session,
 		s.Handlers.Validate.PushBack(func(request *request.Request) {
 			src := setupReqProxy(endpointSource, getEndpointPort(settings))
 			if src != nil {
-				tracelog.InfoLogger.Printf("using endpoint %s", *src)
+				tracelog.DebugLogger.Printf("using endpoint %s", *src)
 				host := strings.TrimPrefix(*config.Endpoint, "https://")
 				request.HTTPRequest.Host = host
 				request.HTTPRequest.Header.Add("Host", host)
 				request.HTTPRequest.URL.Host = *src
 				request.HTTPRequest.URL.Scheme = HTTP
 			} else {
-				tracelog.InfoLogger.Printf("using endpoint %s", *config.Endpoint)
+				tracelog.DebugLogger.Printf("using endpoint %s", *config.Endpoint)
 			}
 		})
 	}
