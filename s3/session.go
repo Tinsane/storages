@@ -2,6 +2,7 @@ package s3
 
 import (
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/client"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/defaults"
 	"github.com/aws/aws-sdk-go/aws/request"
@@ -86,8 +87,11 @@ func getDefaultConfig(settings map[string]string) *aws.Config {
 	// most services. If you want to implement custom retry logic, you can implement the
 	// request.Retryer interface.
 	config := defaults.Get().Config.
-		WithRegion(settings[RegionSetting])
-	config = request.WithRetryer(config, NewThrottlerRetries(MaxRetries))
+		WithRegion(settings[RegionSetting]).
+		WithLogger(aws.LoggerFunc(tracelog.ErrorLogger.Println)).
+		WithLogLevel(aws.LogDebugWithRequestErrors | aws.LogDebugWithRequestRetries)
+
+	config = request.WithRetryer(config, client.DefaultRetryer{NumMaxRetries: MaxRetries})
 
 	provider := &credentials.StaticProvider{Value: credentials.Value{
 		AccessKeyID:     getFirstSettingOf(settings, []string{AccessKeyIdSetting, AccessKeySetting}),
