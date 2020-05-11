@@ -64,6 +64,7 @@
     "aws/request",
     "aws/session",
     "aws/signer/v4",
+    "internal/context",
     "internal/ini",
     "internal/s3err",
     "internal/sdkio",
@@ -71,6 +72,8 @@
     "internal/sdkrand",
     "internal/sdkuri",
     "internal/shareddefaults",
+    "internal/strings",
+    "internal/sync/singleflight",
     "private/protocol",
     "private/protocol/eventstream",
     "private/protocol/eventstream/eventstreamapi",
@@ -89,8 +92,8 @@
     "service/sts/stsiface",
   ]
   pruneopts = "UT"
-  revision = "02b4b7ee6be1875f36e9c9a0a4c773115957d03b"
-  version = "v1.26.1"
+  revision = "80760876d2f0fe900443900ba667b7a15ebfd055"
+  version = "v1.30.24"
 
 [[projects]]
   digest = "1:ffe9824d294da03b391f44e1ae8281281b4afc1bdaa9588c9097785e3af10cec"
