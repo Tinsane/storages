@@ -59,4 +59,4 @@
 
 [[constraint]]
   branch = "master"
-  name = "github.com/tinsane/tracelog"
+  name = "github.com/wal-g/tracelog"

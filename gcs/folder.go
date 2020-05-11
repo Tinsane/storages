@@ -3,7 +3,7 @@ package gcs
 import (
 	"context"
 	"github.com/pkg/errors"
-	"github.com/tinsane/tracelog"
+	"github.com/wal-g/tracelog"
 	"github.com/wal-g/storages/storage"
 	"io"
 	"io/ioutil"

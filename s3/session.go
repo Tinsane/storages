@@ -2,13 +2,14 @@ package s3
 
 import (
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/client"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/defaults"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/pkg/errors"
-	"github.com/tinsane/tracelog"
+	"github.com/wal-g/tracelog"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -81,10 +82,12 @@ func setupReqProxy(endpointSource, port string) *string {
 	return nil
 }
 
-
 func getDefaultConfig(settings map[string]string) *aws.Config {
-	config := defaults.Get().Config.
-		WithRegion(settings[RegionSetting])
+	// DefaultRetryer implements basic retry logic using exponential backoff for
+	// most services. If you want to implement custom retry logic, you can implement the
+	// request.Retryer interface.
+	config := defaults.Get().Config.WithRegion(settings[RegionSetting])
+	config = request.WithRetryer(config, client.DefaultRetryer{NumMaxRetries: MaxRetries})
 
 	provider := &credentials.StaticProvider{Value: credentials.Value{
 		AccessKeyID:     getFirstSettingOf(settings, []string{AccessKeyIdSetting, AccessKeySetting}),
@@ -149,14 +152,14 @@ func createSession(bucket string, settings map[string]string) (*session.Session,
 		s.Handlers.Validate.PushBack(func(request *request.Request) {
 			src := setupReqProxy(endpointSource, getEndpointPort(settings))
 			if src != nil {
-				tracelog.InfoLogger.Printf("using endpoint %s", *src)
+				tracelog.DebugLogger.Printf("using endpoint %s", *src)
 				host := strings.TrimPrefix(*config.Endpoint, "https://")
 				request.HTTPRequest.Host = host
 				request.HTTPRequest.Header.Add("Host", host)
 				request.HTTPRequest.URL.Host = *src
 				request.HTTPRequest.URL.Scheme = HTTP
 			} else {
-				tracelog.InfoLogger.Printf("using endpoint %s", *config.Endpoint)
+				tracelog.DebugLogger.Printf("using endpoint %s", *config.Endpoint)
 			}
 		})
 	}
