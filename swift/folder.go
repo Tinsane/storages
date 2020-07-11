@@ -2,8 +2,8 @@ package swift
 
 import (
 	"bytes"
-	"github.com/tinsane/storages/storage"
-	"github.com/tinsane/tracelog"
+	"github.com/wal-g/storages/storage"
+	"github.com/wal-g/tracelog"
 	"io"
 	"io/ioutil"
 	"os"
