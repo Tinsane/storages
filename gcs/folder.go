@@ -114,7 +114,7 @@ func (folder *Folder) ListFolder() (objects []storage.Object, subFolders []stora
 			}
 		} else {
 			objName := strings.TrimPrefix(objAttrs.Name, prefix)
-			objects = append(objects, storage.NewLocalObject(objName, objAttrs.Updated))
+			objects = append(objects, storage.NewLocalObject(objName, objAttrs.Updated, objAttrs.Size))
 		}
 	}
 	return

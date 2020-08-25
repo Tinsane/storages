@@ -18,10 +18,11 @@ func CeilTimeUpToMicroseconds(timeToCeil time.Time) time.Time {
 type TimeStampedData struct {
 	Data      bytes.Buffer
 	Timestamp time.Time
+	Size 	  int
 }
 
 func TimeStampData(data bytes.Buffer) TimeStampedData {
-	return TimeStampedData{data, CeilTimeUpToMicroseconds(time.Now())}
+	return TimeStampedData{data, CeilTimeUpToMicroseconds(time.Now()), data.Len()}
 }
 
 // Storage is supposed to be used for tests. It doesn't guarantee data safety!
