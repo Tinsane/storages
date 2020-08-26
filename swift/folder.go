@@ -101,7 +101,7 @@ func (folder *Folder) ListFolder() (objects []storage.Object, subFolders []stora
 				}
 				//trim prefix to get object's standalone name
 				objName := strings.TrimPrefix(obj.Name, folder.path)
-				objects = append(objects, storage.NewLocalObject(objName, obj.LastModified))
+				objects = append(objects, storage.NewLocalObject(objName, obj.LastModified, obj.Bytes))
 			}
 		}
 		//return objectNames if a further iteration is required.

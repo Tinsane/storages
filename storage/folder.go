@@ -75,7 +75,7 @@ func addPrefixToNames(objects []Object, folderPrefix string) []Object {
 	relativePathObjects := make([]Object, len(objects))
 	for i, object := range objects {
 		relativePath := path.Join(folderPrefix, object.GetName())
-		relativePathObjects[i] = NewLocalObject(relativePath, object.GetLastModified())
+		relativePathObjects[i] = NewLocalObject(relativePath, object.GetLastModified(), object.GetSize())
 	}
 	return relativePathObjects
 }

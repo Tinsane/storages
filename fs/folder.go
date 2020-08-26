@@ -47,7 +47,7 @@ func (folder *Folder) ListFolder() (objects []storage.Object, subFolders []stora
 			subPath := path.Join(folder.subpath, fileInfo.Name()) + "/"
 			subFolders = append(subFolders, NewFolder(folder.rootPath, subPath))
 		} else {
-			objects = append(objects, storage.NewLocalObject(fileInfo.Name(), fileInfo.ModTime()))
+			objects = append(objects, storage.NewLocalObject(fileInfo.Name(), fileInfo.ModTime(), fileInfo.Size()))
 		}
 	}
 	return

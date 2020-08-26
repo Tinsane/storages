@@ -175,7 +175,7 @@ func (folder *Folder) ListFolder() (objects []storage.Object, subFolders []stora
 				continue
 			}
 			objectRelativePath := strings.TrimPrefix(*object.Key, folder.Path)
-			objects = append(objects, storage.NewLocalObject(objectRelativePath, *object.LastModified))
+			objects = append(objects, storage.NewLocalObject(objectRelativePath, *object.LastModified, *object.Size))
 		}
 		return true
 	})

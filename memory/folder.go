@@ -37,7 +37,7 @@ func (folder *Folder) ListFolder() (objects []storage.Object, subFolders []stora
 		}
 		if filepath.Base(key) == strings.TrimPrefix(key, folder.path) {
 			nameParts := strings.SplitAfter(key, "/")
-			objects = append(objects, storage.NewLocalObject(nameParts[len(nameParts)-1], value.Timestamp))
+			objects = append(objects, storage.NewLocalObject(nameParts[len(nameParts)-1], value.Timestamp, int64(value.Size)))
 		} else {
 			subFolderName := strings.Split(strings.TrimPrefix(key, folder.path), "/")[0]
 			subFolderNames.Store(subFolderName, true)

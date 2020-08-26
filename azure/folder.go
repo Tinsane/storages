@@ -147,7 +147,7 @@ func (folder *Folder) ListFolder() (objects []storage.Object, subFolders []stora
 			objName := strings.TrimPrefix(blob.Name, folder.path)
 			updated := time.Time(blob.Properties.LastModified)
 
-			objects = append(objects, storage.NewLocalObject(objName, updated))
+			objects = append(objects, storage.NewLocalObject(objName, updated, *blob.Properties.ContentLength))
 		}
 
 		marker = blobs.NextMarker

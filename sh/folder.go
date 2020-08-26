@@ -101,6 +101,7 @@ func (folder *Folder) ListFolder() (objects []storage.Object, subFolders []stora
 		object := storage.NewLocalObject(
 			fileInfo.Name(),
 			fileInfo.ModTime(),
+			fileInfo.Size(),
 		)
 		objects = append(objects, object)
 	}
