@@ -2,14 +2,16 @@ package gcs
 
 import (
 	"context"
-	"github.com/pkg/errors"
-	"github.com/wal-g/tracelog"
-	"github.com/wal-g/storages/storage"
 	"io"
 	"io/ioutil"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/pkg/errors"
+	"github.com/wal-g/tracelog"
+
+	"github.com/wal-g/storages/storage"
 
 	gcs "cloud.google.com/go/storage"
 	"google.golang.org/api/iterator"
@@ -21,10 +23,14 @@ const (
 	defaultContextTimeout = 60 * 60 // 1 hour
 )
 
-var SettingList = []string{
-	ContextTimeout,
-	NormalizePrefix,
-}
+var (
+	// MaxRetries limit upload and download retries during interaction with GCS.
+	MaxRetries  = 15
+	SettingList = []string{
+		ContextTimeout,
+		NormalizePrefix,
+	}
+)
 
 func NewError(err error, format string, args ...interface{}) storage.Error {
 	return storage.NewError(err, "GCS", format, args...)
@@ -174,7 +180,16 @@ func (folder *Folder) PutObject(name string, content io.Reader) error {
 	ctx, cancel := folder.createTimeoutContext()
 	defer cancel()
 	writer := object.NewWriter(ctx)
-	_, err := io.Copy(writer, content)
+	var err error
+	for retry := 0; retry <= MaxRetries; retry++ {
+		writer := object.NewWriter(ctx)
+		_, err = io.Copy(writer, content)
+		if err == nil {
+			break
+		}
+
+		tracelog.ErrorLogger.Printf("Unable to copy to object %s, err: %v, retrying attempt %d", name, err, retry)
+	}
 	if err != nil {
 		return NewError(err, "Unable to copy to object")
 	}
