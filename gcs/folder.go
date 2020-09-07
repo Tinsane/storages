@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"io/ioutil"
+	"math"
+	"math/rand"
 	"strconv"
 	"strings"
 	"time"
@@ -21,11 +23,17 @@ const (
 	ContextTimeout        = "GCS_CONTEXT_TIMEOUT"
 	NormalizePrefix       = "GCS_NORMALIZE_PREFIX"
 	defaultContextTimeout = 60 * 60 // 1 hour
+	maxRetryDelay         = 5 * time.Minute
 )
 
 var (
-	// MaxRetries limit upload and download retries during interaction with GCS.
-	MaxRetries  = 15
+	// MaxRetries limits upload and download retries during interaction with GCS.
+	MaxRetries = 16
+
+	// BaseRetryDelay defines the first delay for retry.
+	BaseRetryDelay = 128 * time.Millisecond
+
+	// SettingList provides a list of GCS folder settings.
 	SettingList = []string{
 		ContextTimeout,
 		NormalizePrefix,
@@ -180,7 +188,13 @@ func (folder *Folder) PutObject(name string, content io.Reader) error {
 	ctx, cancel := folder.createTimeoutContext()
 	defer cancel()
 	writer := object.NewWriter(ctx)
+
 	var err error
+	timer := time.NewTimer(BaseRetryDelay)
+	defer func() {
+		timer.Stop()
+	}()
+
 	for retry := 0; retry <= MaxRetries; retry++ {
 		writer := object.NewWriter(ctx)
 		_, err = io.Copy(writer, content)
@@ -189,7 +203,19 @@ func (folder *Folder) PutObject(name string, content io.Reader) error {
 		}
 
 		tracelog.ErrorLogger.Printf("Unable to copy to object %s, err: %v, retrying attempt %d", name, err, retry)
+
+		tempDelay := BaseRetryDelay * time.Duration(math.Exp2(float64(retry)))
+		sleepInterval := minDuration(maxRetryDelay, getJitterDelay(tempDelay/2))
+
+		timer.Reset(sleepInterval)
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timer.C:
+		}
 	}
+
 	if err != nil {
 		return NewError(err, "Unable to copy to object")
 	}
@@ -212,4 +238,18 @@ func (folder *Folder) joinPath(one string, another string) string {
 		another = another[1:]
 	}
 	return one + "/" + another
+}
+
+// getJitterDelay calculates an equal jitter delay.
+func getJitterDelay(delay time.Duration) time.Duration {
+	return time.Duration(rand.Float64()*float64(delay)) + delay
+}
+
+// minDuration returns the minimum value of provided durations.
+func minDuration(a, b time.Duration) time.Duration {
+	if a < b {
+		return a
+	}
+
+	return b
 }
