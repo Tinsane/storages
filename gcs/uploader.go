@@ -70,13 +70,17 @@ func (u *Uploader) uploadChunk(ctx context.Context, chunk chunk) error {
 		timer.Stop()
 	}()
 
+	u.writePosition = 0
+
 	for retry := 0; retry <= u.maxUploadRetries; retry++ {
 		bufReader := bytes.NewReader(chunk.data[u.writePosition:chunk.size])
+
 		n, err := io.Copy(u.writer, bufReader)
-		u.writePosition += n
 		if err == nil {
 			return nil
 		}
+
+		u.writePosition += n
 
 		tracelog.ErrorLogger.Printf("Unable to copy to object %s, part %d, err: %v, retrying attempt %d", chunk.name, chunk.index, err, retry)
 
