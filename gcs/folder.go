@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"io/ioutil"
-	"math"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -32,6 +31,9 @@ var (
 
 	// BaseRetryDelay defines the first delay for retry.
 	BaseRetryDelay = 128 * time.Millisecond
+
+	// MaxChunkNum defines the maximum number of chunks to upload one object.
+	MaxChunkNum = 100
 
 	// SettingList provides a list of GCS folder settings.
 	SettingList = []string{
@@ -185,43 +187,48 @@ func (folder *Folder) ReadObject(objectRelativePath string) (io.ReadCloser, erro
 func (folder *Folder) PutObject(name string, content io.Reader) error {
 	tracelog.DebugLogger.Printf("Put %v into %v\n", name, folder.path)
 	object := folder.bucket.Object(folder.joinPath(folder.path, name))
+
 	ctx, cancel := folder.createTimeoutContext()
 	defer cancel()
-	writer := object.NewWriter(ctx)
 
-	var err error
-	timer := time.NewTimer(BaseRetryDelay)
-	defer func() {
-		timer.Stop()
-	}()
+	uploader := NewUploader(object.NewWriter(ctx))
 
-	for retry := 0; retry <= MaxRetries; retry++ {
-		writer := object.NewWriter(ctx)
-		_, err = io.Copy(writer, content)
-		if err == nil {
+	chunkNum := 0
+	dataChunk := uploader.allocateBuffer()
+
+	for {
+		if chunkNum > uploader.maxChunkNum {
+			return NewError(
+				errors.Errorf("the total number of chunks is limited to %d", uploader.maxChunkNum),
+				 "Unable to create a new uploading chunk")
+		}
+
+		n, err := uploader.readChunk(content, dataChunk)
+		if err != nil && err != io.EOF {
+			tracelog.ErrorLogger.Printf("Unable to read content of %s, err: %v", name, err)
+			return NewError(err, "Unable to read a chunk of data to upload")
+		}
+
+		if n == 0 {
 			break
 		}
 
-		tracelog.ErrorLogger.Printf("Unable to copy to object %s, err: %v, retrying attempt %d", name, err, retry)
-
-		tempDelay := BaseRetryDelay * time.Duration(math.Exp2(float64(retry)))
-		sleepInterval := minDuration(maxRetryDelay, getJitterDelay(tempDelay/2))
-
-		timer.Reset(sleepInterval)
-
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-timer.C:
+		chunk := chunk{
+			name:  name,
+			index: chunkNum,
+			data:  dataChunk,
 		}
+
+		if err := uploader.uploadChunk(ctx, object.NewWriter(ctx), chunk); err != nil {
+			return NewError(err, "Unable to copy to object")
+		}
+
+		chunkNum++
+		uploader.resetBuffer(&dataChunk)
 	}
 
-	if err != nil {
-		return NewError(err, "Unable to copy to object")
-	}
 	tracelog.DebugLogger.Printf("Put %v done\n", name)
-	err = writer.Close()
-	if err != nil {
+	if err := object.NewWriter(ctx).Close(); err != nil {
 		return NewError(err, "Unable to Close object")
 	}
 	return nil

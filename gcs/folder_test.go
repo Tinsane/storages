@@ -45,16 +45,14 @@ func (f fakeReader) Read(_ []byte) (int, error) {
 	return 0, errors.New("failed to fake read")
 }
 
-func TestUploadingRetries(t *testing.T) {
-	MaxRetries = 3
+func TestUploadingReaderFails(t *testing.T) {
 	folder := Folder{
 		bucket:         &gcs.BucketHandle{},
 		path:           "path",
-		contextTimeout: 2,
 	}
 
 	err := folder.PutObject("name", fakeReader{})
-	assert.EqualError(t, err, "GCS error : Unable to copy to object: failed to fake read")
+	assert.EqualError(t, err, "GCS error : Unable to read a chunk of data to upload: failed to fake read")
 }
 
 func TestJitterDelay(t *testing.T) {
