@@ -62,7 +62,7 @@ func (u *Uploader) readChunk(content io.Reader, b []byte) (int, error) {
 	return io.LimitReader(content, u.maxChunkSize).Read(b)
 }
 
-func (u *Uploader) uploadChunk(ctx context.Context, writer io.Writer, chunk chunk) error {
+func (u *Uploader) uploadChunk(ctx context.Context, chunk chunk) error {
 	var err error
 	timer := time.NewTimer(u.baseRetryDelay)
 	defer func() {
@@ -72,7 +72,7 @@ func (u *Uploader) uploadChunk(ctx context.Context, writer io.Writer, chunk chun
 	for retry := 0; retry <= u.maxUploadRetries; retry++ {
 		var n int64
 		bufReader := bytes.NewReader(chunk.data[u.writePosition:])
-		n, err = io.Copy(writer, bufReader)
+		n, err = io.Copy(u.writer, bufReader)
 		if err == nil {
 			return nil
 		}

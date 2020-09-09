@@ -197,11 +197,12 @@ func (folder *Folder) PutObject(name string, content io.Reader) error {
 	dataChunk := uploader.allocateBuffer()
 
 	for {
-		if chunkNum > uploader.maxChunkNum {
-			return NewError(
-				errors.Errorf("the total number of chunks is limited to %d", uploader.maxChunkNum),
-				 "Unable to create a new uploading chunk")
-		}
+		// TODO: should we check max chunk number?
+		//if chunkNum > uploader.maxChunkNum {
+		//	return NewError(
+		//		errors.Errorf("the total number of chunks is limited to %d", uploader.maxChunkNum),
+		//		"Unable to create a new uploading chunk")
+		//}
 
 		n, err := uploader.readChunk(content, dataChunk)
 		if err != nil && err != io.EOF {
@@ -219,7 +220,7 @@ func (folder *Folder) PutObject(name string, content io.Reader) error {
 			data:  dataChunk,
 		}
 
-		if err := uploader.uploadChunk(ctx, object.NewWriter(ctx), chunk); err != nil {
+		if err := uploader.uploadChunk(ctx, chunk); err != nil {
 			return NewError(err, "Unable to copy to object")
 		}
 
