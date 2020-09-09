@@ -130,7 +130,10 @@ func (folder *Folder) ListFolder() (objects []storage.Object, subFolders []stora
 			}
 		} else {
 			objName := strings.TrimPrefix(objAttrs.Name, prefix)
-			objects = append(objects, storage.NewLocalObject(objName, objAttrs.Updated, objAttrs.Size))
+			if objName != "" {
+				// GCS returns the current directory - skip it.
+				objects = append(objects, storage.NewLocalObject(objName, objAttrs.Updated, objAttrs.Size))
+			}
 		}
 	}
 	return
@@ -197,13 +200,6 @@ func (folder *Folder) PutObject(name string, content io.Reader) error {
 	dataChunk := uploader.allocateBuffer()
 
 	for {
-		// TODO: should we check max chunk number?
-		//if chunkNum > uploader.maxChunkNum {
-		//	return NewError(
-		//		errors.Errorf("the total number of chunks is limited to %d", uploader.maxChunkNum),
-		//		"Unable to create a new uploading chunk")
-		//}
-
 		n, err := uploader.readChunk(content, dataChunk)
 		if err != nil && err != io.EOF {
 			tracelog.ErrorLogger.Printf("Unable to read content of %s, err: %v", name, err)
@@ -218,6 +214,7 @@ func (folder *Folder) PutObject(name string, content io.Reader) error {
 			name:  name,
 			index: chunkNum,
 			data:  dataChunk,
+			size:  n,
 		}
 
 		if err := uploader.uploadChunk(ctx, chunk); err != nil {
@@ -229,7 +226,7 @@ func (folder *Folder) PutObject(name string, content io.Reader) error {
 	}
 
 	tracelog.DebugLogger.Printf("Put %v done\n", name)
-	if err := object.NewWriter(ctx).Close(); err != nil {
+	if err := uploader.writer.Close(); err != nil {
 		return NewError(err, "Unable to Close object")
 	}
 	return nil

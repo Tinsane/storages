@@ -47,8 +47,8 @@ func (f fakeReader) Read(_ []byte) (int, error) {
 
 func TestUploadingReaderFails(t *testing.T) {
 	folder := Folder{
-		bucket:         &gcs.BucketHandle{},
-		path:           "path",
+		bucket: &gcs.BucketHandle{},
+		path:   "path",
 	}
 
 	err := folder.PutObject("name", fakeReader{})

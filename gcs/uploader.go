@@ -7,6 +7,7 @@ import (
 	"math"
 	"time"
 
+	"cloud.google.com/go/storage"
 	"github.com/pkg/errors"
 	"github.com/wal-g/tracelog"
 )
@@ -16,7 +17,7 @@ const (
 )
 
 type Uploader struct {
-	writer           io.Writer
+	writer           *storage.Writer
 	maxChunkNum      int
 	maxChunkSize     int64
 	writePosition    int64
@@ -31,9 +32,10 @@ type chunk struct {
 	name  string
 	index int
 	data  []byte
+	size  int
 }
 
-func NewUploader(writer io.Writer, options ...UploaderOptions) *Uploader {
+func NewUploader(writer *storage.Writer, options ...UploaderOptions) *Uploader {
 	u := &Uploader{
 		writer:           writer,
 		maxChunkNum:      MaxChunkNum,
@@ -63,20 +65,18 @@ func (u *Uploader) readChunk(content io.Reader, b []byte) (int, error) {
 }
 
 func (u *Uploader) uploadChunk(ctx context.Context, chunk chunk) error {
-	var err error
 	timer := time.NewTimer(u.baseRetryDelay)
 	defer func() {
 		timer.Stop()
 	}()
 
 	for retry := 0; retry <= u.maxUploadRetries; retry++ {
-		var n int64
-		bufReader := bytes.NewReader(chunk.data[u.writePosition:])
-		n, err = io.Copy(u.writer, bufReader)
+		bufReader := bytes.NewReader(chunk.data[u.writePosition:chunk.size])
+		n, err := io.Copy(u.writer, bufReader)
+		u.writePosition += n
 		if err == nil {
 			return nil
 		}
-		u.writePosition += n
 
 		tracelog.ErrorLogger.Printf("Unable to copy to object %s, part %d, err: %v, retrying attempt %d", chunk.name, chunk.index, err, retry)
 
