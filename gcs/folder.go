@@ -2,14 +2,17 @@ package gcs
 
 import (
 	"context"
-	"github.com/pkg/errors"
-	"github.com/wal-g/tracelog"
-	"github.com/wal-g/storages/storage"
 	"io"
 	"io/ioutil"
+	"math/rand"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/pkg/errors"
+	"github.com/wal-g/tracelog"
+
+	"github.com/wal-g/storages/storage"
 
 	gcs "cloud.google.com/go/storage"
 	"google.golang.org/api/iterator"
@@ -19,12 +22,25 @@ const (
 	ContextTimeout        = "GCS_CONTEXT_TIMEOUT"
 	NormalizePrefix       = "GCS_NORMALIZE_PREFIX"
 	defaultContextTimeout = 60 * 60 // 1 hour
+	maxRetryDelay         = 5 * time.Minute
 )
 
-var SettingList = []string{
-	ContextTimeout,
-	NormalizePrefix,
-}
+var (
+	// MaxRetries limits upload and download retries during interaction with GCS.
+	MaxRetries = 16
+
+	// BaseRetryDelay defines the first delay for retry.
+	BaseRetryDelay = 128 * time.Millisecond
+
+	// MaxChunkNum defines the maximum number of chunks to upload one object.
+	MaxChunkNum = 100
+
+	// SettingList provides a list of GCS folder settings.
+	SettingList = []string{
+		ContextTimeout,
+		NormalizePrefix,
+	}
+)
 
 func NewError(err error, format string, args ...interface{}) storage.Error {
 	return storage.NewError(err, "GCS", format, args...)
@@ -114,7 +130,10 @@ func (folder *Folder) ListFolder() (objects []storage.Object, subFolders []stora
 			}
 		} else {
 			objName := strings.TrimPrefix(objAttrs.Name, prefix)
-			objects = append(objects, storage.NewLocalObject(objName, objAttrs.Updated, objAttrs.Size))
+			if objName != "" {
+				// GCS returns the current directory - skip it.
+				objects = append(objects, storage.NewLocalObject(objName, objAttrs.Updated, objAttrs.Size))
+			}
 		}
 	}
 	return
@@ -171,16 +190,43 @@ func (folder *Folder) ReadObject(objectRelativePath string) (io.ReadCloser, erro
 func (folder *Folder) PutObject(name string, content io.Reader) error {
 	tracelog.DebugLogger.Printf("Put %v into %v\n", name, folder.path)
 	object := folder.bucket.Object(folder.joinPath(folder.path, name))
+
 	ctx, cancel := folder.createTimeoutContext()
 	defer cancel()
-	writer := object.NewWriter(ctx)
-	_, err := io.Copy(writer, content)
-	if err != nil {
-		return NewError(err, "Unable to copy to object")
+
+	uploader := NewUploader(object.NewWriter(ctx))
+
+	chunkNum := 0
+	dataChunk := uploader.allocateBuffer()
+
+	for {
+		n, err := uploader.readChunk(content, dataChunk)
+		if err != nil && err != io.EOF {
+			tracelog.ErrorLogger.Printf("Unable to read content of %s, err: %v", name, err)
+			return NewError(err, "Unable to read a chunk of data to upload")
+		}
+
+		if n == 0 {
+			break
+		}
+
+		chunk := chunk{
+			name:  name,
+			index: chunkNum,
+			data:  dataChunk,
+			size:  n,
+		}
+
+		if err := uploader.uploadChunk(ctx, chunk); err != nil {
+			return NewError(err, "Unable to copy to object")
+		}
+
+		chunkNum++
+		uploader.resetBuffer(&dataChunk)
 	}
+
 	tracelog.DebugLogger.Printf("Put %v done\n", name)
-	err = writer.Close()
-	if err != nil {
+	if err := uploader.writer.Close(); err != nil {
 		return NewError(err, "Unable to Close object")
 	}
 	return nil
@@ -197,4 +243,18 @@ func (folder *Folder) joinPath(one string, another string) string {
 		another = another[1:]
 	}
 	return one + "/" + another
+}
+
+// getJitterDelay calculates an equal jitter delay.
+func getJitterDelay(delay time.Duration) time.Duration {
+	return time.Duration(rand.Float64()*float64(delay)) + delay
+}
+
+// minDuration returns the minimum value of provided durations.
+func minDuration(a, b time.Duration) time.Duration {
+	if a < b {
+		return a
+	}
+
+	return b
 }
