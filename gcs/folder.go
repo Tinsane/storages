@@ -2,7 +2,6 @@ package gcs
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -185,16 +184,6 @@ func (folder *Folder) ReadObject(objectRelativePath string) (io.ReadCloser, erro
 	return ioutil.NopCloser(reader), err
 }
 
-func readFillBuf(r io.Reader, b []byte) (offset int, err error) {
-	for offset < len(b) && err == nil {
-		var n int
-		n, err = r.Read(b[offset:])
-		offset += n
-	}
-
-	return offset, err
-}
-
 func (folder *Folder) PutObject(name string, content io.Reader) error {
 	tracelog.DebugLogger.Printf("Put %v into %v\n", name, folder.path)
 	object := folder.bucket.Object(folder.joinPath(folder.path, name))
@@ -207,21 +196,8 @@ func (folder *Folder) PutObject(name string, content io.Reader) error {
 	chunkNum := 0
 	dataChunk := uploader.allocateBuffer()
 
-
-	//readerAt, ok := content.(io.ReaderAt)
-	//if ok {
-	//	tracelog.InfoLogger.Printf("ReaderAt is using")
-		//content = io.NewSectionReader(readerAt, uploader.readPosition, uploader.maxChunkSize)
-		//readerAt = io.NewSectionReader(readerAt, uploader.readPosition, uploader.maxChunkSize)
-		//content = readerAt
-	//} else {
-	//	content = io.LimitReader(content, uploader.maxChunkSize)
-	//}
-
 	for {
-		//n, err := uploader.readChunks(readerAt, dataChunk)
-		n, err := readFillBuf(content, dataChunk)
-		//n, err := content.Read(dataChunk)
+		n, err := fillBuffer(content, dataChunk)
 		if err != nil && err != io.EOF {
 			tracelog.ErrorLogger.Printf("Unable to read content of %s, err: %v", name, err)
 			return NewError(err, "Unable to read a chunk of data to upload")
@@ -231,18 +207,12 @@ func (folder *Folder) PutObject(name string, content io.Reader) error {
 			break
 		}
 
-		//uploader.readPosition += int64(n)
-
-		//fmt.Println(uploader.readPosition)
-
 		chunk := chunk{
 			name:  name,
 			index: chunkNum,
 			data:  dataChunk,
 			size:  n,
 		}
-
-		fmt.Println("Chunk", chunk.name, chunk.index, chunk.size)
 
 		if err := uploader.uploadChunk(ctx, chunk); err != nil {
 			return NewError(err, "Unable to copy to object")
@@ -251,8 +221,7 @@ func (folder *Folder) PutObject(name string, content io.Reader) error {
 		chunkNum++
 		uploader.resetBuffer(&dataChunk)
 
-		if err == io.EOF && n == 0 {
-			fmt.Println("EOF err", err)
+		if err == io.EOF {
 			break
 		}
 	}
@@ -275,6 +244,24 @@ func (folder *Folder) joinPath(one string, another string) string {
 		another = another[1:]
 	}
 	return one + "/" + another
+}
+
+// fillBuffer fills the buffer with data from the reader.
+func fillBuffer(r io.Reader, b []byte) (int, error) {
+	var (
+		err       error
+		n, offset int
+	)
+
+	for offset < len(b) {
+		n, err = r.Read(b[offset:])
+		offset += n
+		if err != nil {
+			break
+		}
+	}
+
+	return offset, err
 }
 
 // getJitterDelay calculates an equal jitter delay.

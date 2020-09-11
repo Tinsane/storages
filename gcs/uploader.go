@@ -58,10 +58,6 @@ func (u *Uploader) resetBuffer(b *[]byte) {
 	*b = u.allocateBuffer()
 }
 
-func (u *Uploader) readChunk(content io.Reader, b []byte) (int, error) {
-	return io.LimitReader(content, u.maxChunkSize).Read(b)
-}
-
 func (u *Uploader) uploadChunk(ctx context.Context, chunk chunk) error {
 	timer := time.NewTimer(u.baseRetryDelay)
 	defer func() {
