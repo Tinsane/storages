@@ -18,7 +18,6 @@ const (
 
 type Uploader struct {
 	writer           *storage.Writer
-	maxChunkNum      int
 	maxChunkSize     int64
 	writePosition    int64
 	baseRetryDelay   time.Duration
@@ -38,7 +37,6 @@ type chunk struct {
 func NewUploader(writer *storage.Writer, options ...UploaderOptions) *Uploader {
 	u := &Uploader{
 		writer:           writer,
-		maxChunkNum:      MaxChunkNum,
 		maxChunkSize:     defaultMaxChunkSize,
 		baseRetryDelay:   BaseRetryDelay,
 		maxRetryDelay:    maxRetryDelay,

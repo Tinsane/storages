@@ -2,6 +2,7 @@ package gcs
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -31,9 +32,6 @@ var (
 
 	// BaseRetryDelay defines the first delay for retry.
 	BaseRetryDelay = 128 * time.Millisecond
-
-	// MaxChunkNum defines the maximum number of chunks to upload one object.
-	MaxChunkNum = 100
 
 	// SettingList provides a list of GCS folder settings.
 	SettingList = []string{
@@ -187,6 +185,16 @@ func (folder *Folder) ReadObject(objectRelativePath string) (io.ReadCloser, erro
 	return ioutil.NopCloser(reader), err
 }
 
+func readFillBuf(r io.Reader, b []byte) (offset int, err error) {
+	for offset < len(b) && err == nil {
+		var n int
+		n, err = r.Read(b[offset:])
+		offset += n
+	}
+
+	return offset, err
+}
+
 func (folder *Folder) PutObject(name string, content io.Reader) error {
 	tracelog.DebugLogger.Printf("Put %v into %v\n", name, folder.path)
 	object := folder.bucket.Object(folder.joinPath(folder.path, name))
@@ -199,8 +207,21 @@ func (folder *Folder) PutObject(name string, content io.Reader) error {
 	chunkNum := 0
 	dataChunk := uploader.allocateBuffer()
 
+
+	//readerAt, ok := content.(io.ReaderAt)
+	//if ok {
+	//	tracelog.InfoLogger.Printf("ReaderAt is using")
+		//content = io.NewSectionReader(readerAt, uploader.readPosition, uploader.maxChunkSize)
+		//readerAt = io.NewSectionReader(readerAt, uploader.readPosition, uploader.maxChunkSize)
+		//content = readerAt
+	//} else {
+	//	content = io.LimitReader(content, uploader.maxChunkSize)
+	//}
+
 	for {
-		n, err := uploader.readChunk(content, dataChunk)
+		//n, err := uploader.readChunks(readerAt, dataChunk)
+		n, err := readFillBuf(content, dataChunk)
+		//n, err := content.Read(dataChunk)
 		if err != nil && err != io.EOF {
 			tracelog.ErrorLogger.Printf("Unable to read content of %s, err: %v", name, err)
 			return NewError(err, "Unable to read a chunk of data to upload")
@@ -210,6 +231,10 @@ func (folder *Folder) PutObject(name string, content io.Reader) error {
 			break
 		}
 
+		//uploader.readPosition += int64(n)
+
+		//fmt.Println(uploader.readPosition)
+
 		chunk := chunk{
 			name:  name,
 			index: chunkNum,
@@ -217,12 +242,19 @@ func (folder *Folder) PutObject(name string, content io.Reader) error {
 			size:  n,
 		}
 
+		fmt.Println("Chunk", chunk.name, chunk.index, chunk.size)
+
 		if err := uploader.uploadChunk(ctx, chunk); err != nil {
 			return NewError(err, "Unable to copy to object")
 		}
 
 		chunkNum++
 		uploader.resetBuffer(&dataChunk)
+
+		if err == io.EOF && n == 0 {
+			fmt.Println("EOF err", err)
+			break
+		}
 	}
 
 	tracelog.DebugLogger.Printf("Put %v done\n", name)
