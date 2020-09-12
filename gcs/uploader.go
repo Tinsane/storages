@@ -18,7 +18,6 @@ const (
 
 type Uploader struct {
 	writer           *storage.Writer
-	maxChunkNum      int
 	maxChunkSize     int64
 	writePosition    int64
 	baseRetryDelay   time.Duration
@@ -38,7 +37,6 @@ type chunk struct {
 func NewUploader(writer *storage.Writer, options ...UploaderOptions) *Uploader {
 	u := &Uploader{
 		writer:           writer,
-		maxChunkNum:      MaxChunkNum,
 		maxChunkSize:     defaultMaxChunkSize,
 		baseRetryDelay:   BaseRetryDelay,
 		maxRetryDelay:    maxRetryDelay,
@@ -58,10 +56,6 @@ func (u *Uploader) allocateBuffer() []byte {
 
 func (u *Uploader) resetBuffer(b *[]byte) {
 	*b = u.allocateBuffer()
-}
-
-func (u *Uploader) readChunk(content io.Reader, b []byte) (int, error) {
-	return io.LimitReader(content, u.maxChunkSize).Read(b)
 }
 
 func (u *Uploader) uploadChunk(ctx context.Context, chunk chunk) error {

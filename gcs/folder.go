@@ -32,9 +32,6 @@ var (
 	// BaseRetryDelay defines the first delay for retry.
 	BaseRetryDelay = 128 * time.Millisecond
 
-	// MaxChunkNum defines the maximum number of chunks to upload one object.
-	MaxChunkNum = 100
-
 	// SettingList provides a list of GCS folder settings.
 	SettingList = []string{
 		ContextTimeout,
@@ -200,7 +197,7 @@ func (folder *Folder) PutObject(name string, content io.Reader) error {
 	dataChunk := uploader.allocateBuffer()
 
 	for {
-		n, err := uploader.readChunk(content, dataChunk)
+		n, err := fillBuffer(content, dataChunk)
 		if err != nil && err != io.EOF {
 			tracelog.ErrorLogger.Printf("Unable to read content of %s, err: %v", name, err)
 			return NewError(err, "Unable to read a chunk of data to upload")
@@ -223,6 +220,10 @@ func (folder *Folder) PutObject(name string, content io.Reader) error {
 
 		chunkNum++
 		uploader.resetBuffer(&dataChunk)
+
+		if err == io.EOF {
+			break
+		}
 	}
 
 	tracelog.DebugLogger.Printf("Put %v done\n", name)
@@ -243,6 +244,24 @@ func (folder *Folder) joinPath(one string, another string) string {
 		another = another[1:]
 	}
 	return one + "/" + another
+}
+
+// fillBuffer fills the buffer with data from the reader.
+func fillBuffer(r io.Reader, b []byte) (int, error) {
+	var (
+		err       error
+		n, offset int
+	)
+
+	for offset < len(b) {
+		n, err = r.Read(b[offset:])
+		offset += n
+		if err != nil {
+			break
+		}
+	}
+
+	return offset, err
 }
 
 // getJitterDelay calculates an equal jitter delay.
