@@ -191,12 +191,15 @@ func (folder *Folder) PutObject(name string, content io.Reader) error {
 	ctx, cancel := folder.createTimeoutContext()
 	defer cancel()
 
-	uploader := NewUploader(object.NewWriter(ctx))
-
 	chunkNum := 0
-	dataChunk := uploader.allocateBuffer()
+	tmpChunks := make([]*gcs.ObjectHandle, 0)
 
 	for {
+		tmpChunkName := folder.joinPath(name+"_chunks", "chunk"+strconv.Itoa(chunkNum))
+		objectChunk := folder.bucket.Object(folder.joinPath(folder.path, tmpChunkName))
+		chunkUploader := NewUploader(objectChunk)
+		dataChunk := chunkUploader.allocateBuffer()
+
 		n, err := fillBuffer(content, dataChunk)
 		if err != nil && err != io.EOF {
 			tracelog.ErrorLogger.Printf("Unable to read content of %s, err: %v", name, err)
@@ -208,28 +211,40 @@ func (folder *Folder) PutObject(name string, content io.Reader) error {
 		}
 
 		chunk := chunk{
-			name:  name,
+			name:  tmpChunkName,
 			index: chunkNum,
 			data:  dataChunk,
 			size:  n,
 		}
 
-		if err := uploader.uploadChunk(ctx, chunk); err != nil {
-			return NewError(err, "Unable to copy to object")
+		if err := chunkUploader.UploadChunk(ctx, chunk); err != nil {
+			return NewError(err, "Unable to upload an object chunk")
 		}
 
+		tmpChunks = append(tmpChunks, objectChunk)
+
 		chunkNum++
-		uploader.resetBuffer(&dataChunk)
 
 		if err == io.EOF {
 			break
 		}
 	}
 
-	tracelog.DebugLogger.Printf("Put %v done\n", name)
-	if err := uploader.writer.Close(); err != nil {
-		return NewError(err, "Unable to Close object")
+	tracelog.DebugLogger.Printf("Compose file %v from chunks\n", object.ObjectName())
+
+	uploader := NewUploader(object)
+	if err := uploader.ComposeObject(ctx, tmpChunks); err != nil {
+		return NewError(err, "Unable to compose object")
 	}
+
+	tracelog.DebugLogger.Printf("Remove temporary chunks for %v\n", object.ObjectName())
+
+	if err := uploader.CleanUpChunks(ctx, tmpChunks); err != nil {
+		return NewError(err, "Unable to delete temporary chunks")
+	}
+
+	tracelog.DebugLogger.Printf("Put %v done\n", name)
+
 	return nil
 }
 
