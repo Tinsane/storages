@@ -13,7 +13,9 @@ import (
 )
 
 const (
-	defaultMaxChunkSize = 20 << 20
+	// The maximum number of chunks cannot exceed 32.
+	// So, increase the chunk size to 50 MiB to be able to upload files up to 1600 MiB.
+	defaultMaxChunkSize = 50 << 20
 )
 
 type Uploader struct {
@@ -60,14 +62,14 @@ func (u *Uploader) UploadChunk(ctx context.Context, chunk chunk) error {
 
 func (u *Uploader) getUploadFunc(chunk chunk) func(context.Context) error {
 	return func(ctx context.Context) error {
-		tracelog.DebugLogger.Printf("Upload %s, part %d\n", chunk.name, chunk.index)
+		tracelog.DebugLogger.Printf("Upload %s, chunk %d\n", chunk.name, chunk.index)
 
 		writer := u.objHandle.NewWriter(ctx)
 		reader := bytes.NewReader(chunk.data[:chunk.size])
 
 		defer func() {
 			if err := writer.Close(); err != nil {
-				tracelog.ErrorLogger.Printf("Unable to close object writer %s, part %d, err: %v", chunk.name, chunk.index, err)
+				tracelog.WarningLogger.Printf("Unable to close object writer %s, part %d, err: %v", chunk.name, chunk.index, err)
 			}
 		}()
 
@@ -76,7 +78,7 @@ func (u *Uploader) getUploadFunc(chunk chunk) func(context.Context) error {
 			return nil
 		}
 
-		tracelog.ErrorLogger.Printf("Unable to copy an object chunk %s, part %d, err: %v", chunk.name, chunk.index, err)
+		tracelog.WarningLogger.Printf("Unable to copy an object chunk %s, part %d, err: %v", chunk.name, chunk.index, err)
 
 		return err
 	}
