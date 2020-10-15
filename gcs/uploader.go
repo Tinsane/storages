@@ -61,19 +61,23 @@ func (u *Uploader) UploadChunk(ctx context.Context, chunk chunk) error {
 }
 
 func (u *Uploader) getUploadFunc(chunk chunk) func(context.Context) error {
-	return func(ctx context.Context) error {
+	return func(ctx context.Context) (err error) {
 		tracelog.DebugLogger.Printf("Upload %s, chunk %d\n", chunk.name, chunk.index)
 
 		writer := u.objHandle.NewWriter(ctx)
 		reader := bytes.NewReader(chunk.data[:chunk.size])
 
 		defer func() {
-			if err := writer.Close(); err != nil {
-				tracelog.WarningLogger.Printf("Unable to close object writer %s, part %d, err: %v", chunk.name, chunk.index, err)
+			if closeErr := writer.Close(); closeErr != nil {
+				tracelog.WarningLogger.Printf("Unable to close object writer %s, part %d, err: %v", chunk.name, chunk.index, closeErr)
+
+				if err == nil {
+					err = closeErr
+				}
 			}
 		}()
 
-		_, err := io.Copy(writer, reader)
+		_, err = io.Copy(writer, reader)
 		if err == nil {
 			return nil
 		}
