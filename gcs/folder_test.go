@@ -39,6 +39,19 @@ func TestGSExactFolder(t *testing.T) {
 	storage.RunFolderTest(storageFolder, t)
 }
 
+func TestGSFolderWithEncryptionKey(t *testing.T) {
+	t.Skip("Credentials needed to run GCP tests")
+
+	storageFolder, err := ConfigureFolder("gs://x4m-test/walg-bucket",
+		map[string]string{
+			EncryptionKey: "F2F90NxJ2LrC/ujDQVGFfHetdDgjIMyrDkkN1VqGNnw=",
+		})
+
+	assert.NoError(t, err)
+
+	storage.RunFolderTest(storageFolder, t)
+}
+
 type fakeReader struct{}
 
 func (f fakeReader) Read(_ []byte) (int, error) {

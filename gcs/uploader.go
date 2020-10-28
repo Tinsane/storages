@@ -75,6 +75,11 @@ func (u *Uploader) getUploadFunc(chunk chunk) func(context.Context) error {
 					err = closeErr
 				}
 			}
+
+			// Since compose sources must not have an encryption key, clean up it.
+			if err == nil {
+				*u.objHandle = *u.objHandle.Key(nil)
+			}
 		}()
 
 		_, err = io.Copy(writer, reader)
@@ -96,6 +101,11 @@ func (u *Uploader) ComposeObject(ctx context.Context, tmpChunks []*storage.Objec
 func (u *Uploader) getComposeFunc(tmpChunks []*storage.ObjectHandle) func(context.Context) error {
 	return func(ctx context.Context) error {
 		_, err := u.objHandle.ComposerFrom(tmpChunks...).Run(ctx)
+		// Since compose sources must not have an encryption key, clean up it.
+		if err == nil {
+			*u.objHandle = *u.objHandle.Key(nil)
+		}
+
 		return err
 	}
 }

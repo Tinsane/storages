@@ -2,6 +2,7 @@ package gcs
 
 import (
 	"context"
+	"encoding/base64"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -21,9 +22,12 @@ import (
 const (
 	ContextTimeout        = "GCS_CONTEXT_TIMEOUT"
 	NormalizePrefix       = "GCS_NORMALIZE_PREFIX"
+	EncryptionKey         = "GCS_ENCRYPTION_KEY"
 	defaultContextTimeout = 60 * 60 // 1 hour
 	maxRetryDelay         = 5 * time.Minute
 	composeChunkLimit     = 32
+
+	encryptionKeySize = 32
 )
 
 var (
@@ -37,6 +41,7 @@ var (
 	SettingList = []string{
 		ContextTimeout,
 		NormalizePrefix,
+		EncryptionKey,
 	}
 )
 
@@ -44,8 +49,17 @@ func NewError(err error, format string, args ...interface{}) storage.Error {
 	return storage.NewError(err, "GCS", format, args...)
 }
 
-func NewFolder(bucket *gcs.BucketHandle, path string, contextTimeout int, normalizePrefix bool) *Folder {
-	return &Folder{bucket, path, contextTimeout, normalizePrefix}
+func NewFolder(bucket *gcs.BucketHandle, path string, contextTimeout int, normalizePrefix bool, encryptionKey []byte) *Folder {
+	encryptionKeyCopy := make([]byte, encryptionKeySize)
+	copy(encryptionKeyCopy, encryptionKey)
+
+	return &Folder{
+		bucket:          bucket,
+		path:            path,
+		contextTimeout:  contextTimeout,
+		normalizePrefix: normalizePrefix,
+		encryptionKey:   encryptionKeyCopy,
+	}
 }
 
 func ConfigureFolder(prefix string, settings map[string]string) (storage.Folder, error) {
@@ -92,7 +106,22 @@ func ConfigureFolder(prefix string, settings map[string]string) (storage.Folder,
 			return nil, NewError(err, "Unable to parse Context Timeout %v", prefix)
 		}
 	}
-	return NewFolder(bucket, path, contextTimeout, normalizePrefix), nil
+
+	encryptionKey := make([]byte, encryptionKeySize)
+	if encodedCSEK, ok := settings[EncryptionKey]; ok {
+		decodedKey, err := base64.StdEncoding.DecodeString(encodedCSEK)
+		if err != nil {
+			return nil, NewError(err, "Unable to parse Customer Supplied Encryption Key %v", encodedCSEK)
+		}
+
+		if len(decodedKey) != encryptionKeySize {
+			return nil, errors.Errorf("Invalid Customer Supplied Encryption Key: not a 32-byte AES-256 key")
+		}
+
+		encryptionKey = decodedKey
+	}
+
+	return NewFolder(bucket, path, contextTimeout, normalizePrefix, encryptionKey), nil
 }
 
 // Folder represents folder in GCP
@@ -101,10 +130,22 @@ type Folder struct {
 	path            string
 	contextTimeout  int
 	normalizePrefix bool
+	encryptionKey   []byte
 }
 
 func (folder *Folder) GetPath() string {
 	return folder.path
+}
+
+// BuildObjectHandle creates a new object handle.
+func (folder *Folder) BuildObjectHandle(path string) *gcs.ObjectHandle {
+	objectHandle := folder.bucket.Object(path)
+
+	if len(folder.encryptionKey) != 0 {
+		objectHandle = objectHandle.Key(folder.encryptionKey)
+	}
+
+	return objectHandle
 }
 
 func (folder *Folder) ListFolder() (objects []storage.Object, subFolders []storage.Folder, err error) {
@@ -124,7 +165,14 @@ func (folder *Folder) ListFolder() (objects []storage.Object, subFolders []stora
 
 			if objAttrs.Prefix != prefix+"/" {
 				// Sometimes GCS returns "//" folder - skip it
-				subFolders = append(subFolders, NewFolder(folder.bucket, objAttrs.Prefix, folder.contextTimeout, folder.normalizePrefix))
+				subFolders = append(subFolders,
+					NewFolder(
+						folder.bucket,
+						objAttrs.Prefix,
+						folder.contextTimeout,
+						folder.normalizePrefix,
+						folder.encryptionKey,
+					))
 			}
 		} else {
 			objName := strings.TrimPrefix(objAttrs.Name, prefix)
@@ -144,7 +192,7 @@ func (folder *Folder) createTimeoutContext() (context.Context, context.CancelFun
 func (folder *Folder) DeleteObjects(objectRelativePaths []string) error {
 	for _, objectRelativePath := range objectRelativePaths {
 		path := folder.joinPath(folder.path, objectRelativePath)
-		object := folder.bucket.Object(path)
+		object := folder.BuildObjectHandle(path)
 		tracelog.DebugLogger.Printf("Delete %v\n", path)
 		ctx, cancel := folder.createTimeoutContext()
 		defer cancel()
@@ -158,7 +206,7 @@ func (folder *Folder) DeleteObjects(objectRelativePaths []string) error {
 
 func (folder *Folder) Exists(objectRelativePath string) (bool, error) {
 	path := folder.joinPath(folder.path, objectRelativePath)
-	object := folder.bucket.Object(path)
+	object := folder.BuildObjectHandle(path)
 	ctx, cancel := folder.createTimeoutContext()
 	defer cancel()
 	_, err := object.Attrs(ctx)
@@ -172,12 +220,18 @@ func (folder *Folder) Exists(objectRelativePath string) (bool, error) {
 }
 
 func (folder *Folder) GetSubFolder(subFolderRelativePath string) storage.Folder {
-	return NewFolder(folder.bucket, folder.joinPath(folder.path, subFolderRelativePath), folder.contextTimeout, folder.normalizePrefix)
+	return NewFolder(
+		folder.bucket,
+		folder.joinPath(folder.path, subFolderRelativePath),
+		folder.contextTimeout,
+		folder.normalizePrefix,
+		folder.encryptionKey,
+	)
 }
 
 func (folder *Folder) ReadObject(objectRelativePath string) (io.ReadCloser, error) {
 	path := folder.joinPath(folder.path, objectRelativePath)
-	object := folder.bucket.Object(path)
+	object := folder.BuildObjectHandle(path)
 	reader, err := object.NewReader(context.Background())
 	if err == gcs.ErrObjectNotExist {
 		return nil, storage.NewObjectNotFoundError(path)
@@ -187,7 +241,7 @@ func (folder *Folder) ReadObject(objectRelativePath string) (io.ReadCloser, erro
 
 func (folder *Folder) PutObject(name string, content io.Reader) error {
 	tracelog.DebugLogger.Printf("Put %v into %v\n", name, folder.path)
-	object := folder.bucket.Object(folder.joinPath(folder.path, name))
+	object := folder.BuildObjectHandle(folder.joinPath(folder.path, name))
 
 	ctx, cancel := folder.createTimeoutContext()
 	defer cancel()
@@ -197,7 +251,7 @@ func (folder *Folder) PutObject(name string, content io.Reader) error {
 
 	for {
 		tmpChunkName := folder.joinPath(name+"_chunks", "chunk"+strconv.Itoa(chunkNum))
-		objectChunk := folder.bucket.Object(folder.joinPath(folder.path, tmpChunkName))
+		objectChunk := folder.BuildObjectHandle(folder.joinPath(folder.path, tmpChunkName))
 		chunkUploader := NewUploader(objectChunk)
 		dataChunk := chunkUploader.allocateBuffer()
 
@@ -233,7 +287,7 @@ func (folder *Folder) PutObject(name string, content io.Reader) error {
 		if len(tmpChunks) == composeChunkLimit {
 			// Since there is a limit to the number of components that can be composed in a single operation, merge chunks partially.
 			compositeChunkName := folder.joinPath(name+"_chunks", "composite"+strconv.Itoa(chunkNum))
-			compositeChunk := folder.bucket.Object(folder.joinPath(folder.path, compositeChunkName))
+			compositeChunk := folder.BuildObjectHandle(folder.joinPath(folder.path, compositeChunkName))
 
 			tracelog.DebugLogger.Printf("Compose temporary chunks into an intermediate chunk %v\n", compositeChunkName)
 
