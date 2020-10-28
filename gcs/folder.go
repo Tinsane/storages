@@ -23,6 +23,7 @@ const (
 	NormalizePrefix       = "GCS_NORMALIZE_PREFIX"
 	defaultContextTimeout = 60 * 60 // 1 hour
 	maxRetryDelay         = 5 * time.Minute
+	composeChunkLimit     = 32
 )
 
 var (
@@ -228,19 +229,26 @@ func (folder *Folder) PutObject(name string, content io.Reader) error {
 		if err == io.EOF {
 			break
 		}
+
+		if len(tmpChunks) == composeChunkLimit {
+			// Since there is a limit to the number of components that can be composed in a single operation, merge chunks partially.
+			compositeChunkName := folder.joinPath(name+"_chunks", "composite"+strconv.Itoa(chunkNum))
+			compositeChunk := folder.bucket.Object(folder.joinPath(folder.path, compositeChunkName))
+
+			tracelog.DebugLogger.Printf("Compose temporary chunks into an intermediate chunk %v\n", compositeChunkName)
+
+			if err := composeChunks(ctx, NewUploader(compositeChunk), tmpChunks); err != nil {
+				return NewError(err, "Failed to compose temporary chunks into an intermediate chunk")
+			}
+
+			tmpChunks = []*gcs.ObjectHandle{compositeChunk}
+		}
 	}
 
 	tracelog.DebugLogger.Printf("Compose file %v from chunks\n", object.ObjectName())
 
-	uploader := NewUploader(object)
-	if err := uploader.ComposeObject(ctx, tmpChunks); err != nil {
-		return NewError(err, "Unable to compose object")
-	}
-
-	tracelog.DebugLogger.Printf("Remove temporary chunks for %v\n", object.ObjectName())
-
-	if err := uploader.CleanUpChunks(ctx, tmpChunks); err != nil {
-		return NewError(err, "Unable to delete temporary chunks")
+	if err := composeChunks(ctx, NewUploader(object), tmpChunks); err != nil {
+		return NewError(err, "Failed to compose temporary chunks into an object")
 	}
 
 	tracelog.DebugLogger.Printf("Put %v done\n", name)
@@ -259,6 +267,21 @@ func (folder *Folder) joinPath(one string, another string) string {
 		another = another[1:]
 	}
 	return one + "/" + another
+}
+
+// composeChunks merges uploaded chunks into a new one and cleans up temporary objects.
+func composeChunks(ctx context.Context, uploader *Uploader, chunks []*gcs.ObjectHandle) error {
+	if err := uploader.ComposeObject(ctx, chunks); err != nil {
+		return NewError(err, "Unable to compose object")
+	}
+
+	tracelog.DebugLogger.Printf("Remove temporary chunks for %v\n", uploader.objHandle.ObjectName())
+
+	if err := uploader.CleanUpChunks(ctx, chunks); err != nil {
+		return NewError(err, "Unable to delete temporary chunks")
+	}
+
+	return nil
 }
 
 // fillBuffer fills the buffer with data from the reader.
