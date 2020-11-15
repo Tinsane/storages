@@ -50,7 +50,7 @@ func NewError(err error, format string, args ...interface{}) storage.Error {
 }
 
 func NewFolder(bucket *gcs.BucketHandle, path string, contextTimeout int, normalizePrefix bool, encryptionKey []byte) *Folder {
-	encryptionKeyCopy := make([]byte, encryptionKeySize)
+	encryptionKeyCopy := make([]byte, len(encryptionKey))
 	copy(encryptionKeyCopy, encryptionKey)
 
 	return &Folder{
@@ -107,7 +107,7 @@ func ConfigureFolder(prefix string, settings map[string]string) (storage.Folder,
 		}
 	}
 
-	encryptionKey := make([]byte, encryptionKeySize)
+	encryptionKey := make([]byte, 0)
 	if encodedCSEK, ok := settings[EncryptionKey]; ok {
 		decodedKey, err := base64.StdEncoding.DecodeString(encodedCSEK)
 		if err != nil {
