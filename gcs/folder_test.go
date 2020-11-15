@@ -12,6 +12,35 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestNewFolder(t *testing.T) {
+	testCases := []struct {
+		bucketHandle    *gcs.BucketHandle
+		path            string
+		timeout         int
+		normalizePrefix bool
+		encryptionKey   []byte
+		folder          *Folder
+	}{
+		{
+			path:    "path",
+			timeout: 10,
+			folder:  &Folder{path: "path", contextTimeout: 10, encryptionKey: []byte{}},
+		},
+		{
+			path:            "path",
+			timeout:         10,
+			normalizePrefix: true,
+			encryptionKey:   []byte("test"),
+			folder:          &Folder{path: "path", contextTimeout: 10, normalizePrefix: true, encryptionKey: []byte("test")},
+		},
+	}
+
+	for _, tc := range testCases {
+		newFolder := NewFolder(tc.bucketHandle, tc.path, tc.timeout, tc.normalizePrefix, tc.encryptionKey)
+		assert.Equal(t, tc.folder, newFolder)
+	}
+}
+
 func TestGSFolder(t *testing.T) {
 	t.Skip("Credentials needed to run GCP tests")
 
