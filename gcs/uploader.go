@@ -16,6 +16,9 @@ const (
 	// The maximum number of chunks cannot exceed 32.
 	// So, increase the chunk size to 50 MiB to be able to upload files up to 1600 MiB.
 	defaultMaxChunkSize = 50 << 20
+
+	// defaultMaxRetries limits upload and download retries during interaction with GCS.
+	defaultMaxRetries = 16
 )
 
 type Uploader struct {
@@ -26,7 +29,7 @@ type Uploader struct {
 	maxUploadRetries int
 }
 
-type UploaderOptions func(*Uploader)
+type UploaderOption func(*Uploader)
 
 type chunk struct {
 	name  string
@@ -35,13 +38,13 @@ type chunk struct {
 	size  int
 }
 
-func NewUploader(objHandle *storage.ObjectHandle, options ...UploaderOptions) *Uploader {
+func NewUploader(objHandle *storage.ObjectHandle, options ...UploaderOption) *Uploader {
 	u := &Uploader{
 		objHandle:        objHandle,
 		maxChunkSize:     defaultMaxChunkSize,
 		baseRetryDelay:   BaseRetryDelay,
 		maxRetryDelay:    maxRetryDelay,
-		maxUploadRetries: MaxRetries,
+		maxUploadRetries: defaultMaxRetries,
 	}
 
 	for _, opt := range options {
