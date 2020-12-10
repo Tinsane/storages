@@ -111,18 +111,25 @@ func (u *Uploader) getComposeFunc(tmpChunks []*storage.ObjectHandle) func(contex
 }
 
 // CleanUpChunks removes temporary chunks.
-func (u *Uploader) CleanUpChunks(ctx context.Context, tmpChunks []*storage.ObjectHandle) error {
+func (u *Uploader) CleanUpChunks(ctx context.Context, tmpChunks []*storage.ObjectHandle) {
 	for _, tmpChunk := range tmpChunks {
 		if err := u.retry(ctx, u.getCleanUpChunksFunc(tmpChunk)); err != nil {
-			return NewError(err, "Unable to delete a temporary chunk")
+			tracelog.WarningLogger.Printf("Unable to delete a temporary chunk %v. Err: %v", tmpChunk.BucketName(), err)
 		}
 	}
-
-	return nil
 }
 
 func (u *Uploader) getCleanUpChunksFunc(tmpChunk *storage.ObjectHandle) func(context.Context) error {
-	return func(ctx context.Context) error { return tmpChunk.Delete(ctx) }
+	return func(ctx context.Context) error {
+		err := tmpChunk.Delete(ctx)
+
+		if err == storage.ErrObjectNotExist {
+			tracelog.WarningLogger.Printf("Temporary chunk %v doesn't exist", tmpChunk.BucketName())
+			return nil
+		}
+
+		return err
+	}
 }
 
 func (u *Uploader) retry(ctx context.Context, retryableFunc func(ctx context.Context) error) error {
@@ -137,7 +144,7 @@ func (u *Uploader) retry(ctx context.Context, retryableFunc func(ctx context.Con
 			return nil
 		}
 
-		tracelog.ErrorLogger.Printf("Failed to run a retriable func. Err: %v, retrying attempt %d", err, retry)
+		tracelog.ErrorLogger.Printf("Failed to run a retryable func. Err: %v, retrying attempt %d", err, retry)
 
 		tempDelay := u.baseRetryDelay * time.Duration(math.Exp2(float64(retry)))
 		sleepInterval := minDuration(u.maxRetryDelay, getJitterDelay(tempDelay/2))

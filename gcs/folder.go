@@ -331,9 +331,7 @@ func composeChunks(ctx context.Context, uploader *Uploader, chunks []*gcs.Object
 
 	tracelog.DebugLogger.Printf("Remove temporary chunks for %v\n", uploader.objHandle.ObjectName())
 
-	if err := uploader.CleanUpChunks(ctx, chunks); err != nil {
-		return NewError(err, "Unable to delete temporary chunks")
-	}
+	uploader.CleanUpChunks(ctx, chunks)
 
 	return nil
 }
