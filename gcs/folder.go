@@ -20,9 +20,12 @@ import (
 )
 
 const (
-	ContextTimeout        = "GCS_CONTEXT_TIMEOUT"
-	NormalizePrefix       = "GCS_NORMALIZE_PREFIX"
-	EncryptionKey         = "GCS_ENCRYPTION_KEY"
+	ContextTimeout  = "GCS_CONTEXT_TIMEOUT"
+	NormalizePrefix = "GCS_NORMALIZE_PREFIX"
+	EncryptionKey   = "GCS_ENCRYPTION_KEY"
+	MaxChunkSize    = "GCS_MAX_CHUNK_SIZE"
+	MaxRetries      = "GCS_MAX_RETRIES"
+
 	defaultContextTimeout = 60 * 60 // 1 hour
 	maxRetryDelay         = 5 * time.Minute
 	composeChunkLimit     = 32
@@ -31,9 +34,6 @@ const (
 )
 
 var (
-	// MaxRetries limits upload and download retries during interaction with GCS.
-	MaxRetries = 16
-
 	// BaseRetryDelay defines the first delay for retry.
 	BaseRetryDelay = 128 * time.Millisecond
 
@@ -42,6 +42,8 @@ var (
 		ContextTimeout,
 		NormalizePrefix,
 		EncryptionKey,
+		MaxChunkSize,
+		MaxRetries,
 	}
 )
 
@@ -49,7 +51,8 @@ func NewError(err error, format string, args ...interface{}) storage.Error {
 	return storage.NewError(err, "GCS", format, args...)
 }
 
-func NewFolder(bucket *gcs.BucketHandle, path string, contextTimeout int, normalizePrefix bool, encryptionKey []byte) *Folder {
+func NewFolder(bucket *gcs.BucketHandle, path string, contextTimeout int, normalizePrefix bool, encryptionKey []byte,
+	options []UploaderOption) *Folder {
 	encryptionKeyCopy := make([]byte, len(encryptionKey))
 	copy(encryptionKeyCopy, encryptionKey)
 
@@ -59,6 +62,7 @@ func NewFolder(bucket *gcs.BucketHandle, path string, contextTimeout int, normal
 		contextTimeout:  contextTimeout,
 		normalizePrefix: normalizePrefix,
 		encryptionKey:   encryptionKeyCopy,
+		uploaderOptions: options,
 	}
 }
 
@@ -121,7 +125,34 @@ func ConfigureFolder(prefix string, settings map[string]string) (storage.Folder,
 		encryptionKey = decodedKey
 	}
 
-	return NewFolder(bucket, path, contextTimeout, normalizePrefix, encryptionKey), nil
+	uploaderOptions, err := getUploaderOptions(settings)
+	if err != nil {
+		return nil, NewError(err, "Unable to parse GCS uploader options")
+	}
+
+	return NewFolder(bucket, path, contextTimeout, normalizePrefix, encryptionKey, uploaderOptions), nil
+}
+
+func getUploaderOptions(settings map[string]string) ([]UploaderOption, error) {
+	uploaderOptions := []UploaderOption{}
+
+	if maxChunkSizeSetting, ok := settings[MaxChunkSize]; ok {
+		chunkSize, err := strconv.ParseInt(maxChunkSizeSetting, 10, 64)
+		if err != nil {
+			return nil, errors.Wrap(err, "invalid maximum chunk size setting")
+		}
+		uploaderOptions = append(uploaderOptions, func(uploader *Uploader) { uploader.maxChunkSize = chunkSize })
+	}
+
+	if maxRetriesSetting, ok := settings[MaxRetries]; ok {
+		maxRetries, err := strconv.Atoi(maxRetriesSetting)
+		if err != nil {
+			return nil, errors.Wrap(err, "invalid maximum retries setting")
+		}
+		uploaderOptions = append(uploaderOptions, func(uploader *Uploader) { uploader.maxUploadRetries = maxRetries })
+	}
+
+	return uploaderOptions, nil
 }
 
 // Folder represents folder in GCP
@@ -131,6 +162,7 @@ type Folder struct {
 	contextTimeout  int
 	normalizePrefix bool
 	encryptionKey   []byte
+	uploaderOptions []UploaderOption
 }
 
 func (folder *Folder) GetPath() string {
@@ -172,6 +204,7 @@ func (folder *Folder) ListFolder() (objects []storage.Object, subFolders []stora
 						folder.contextTimeout,
 						folder.normalizePrefix,
 						folder.encryptionKey,
+						folder.uploaderOptions,
 					))
 			}
 		} else {
@@ -226,6 +259,7 @@ func (folder *Folder) GetSubFolder(subFolderRelativePath string) storage.Folder 
 		folder.contextTimeout,
 		folder.normalizePrefix,
 		folder.encryptionKey,
+		folder.uploaderOptions,
 	)
 }
 
@@ -252,7 +286,7 @@ func (folder *Folder) PutObject(name string, content io.Reader) error {
 	for {
 		tmpChunkName := folder.joinPath(name+"_chunks", "chunk"+strconv.Itoa(chunkNum))
 		objectChunk := folder.BuildObjectHandle(folder.joinPath(folder.path, tmpChunkName))
-		chunkUploader := NewUploader(objectChunk)
+		chunkUploader := NewUploader(objectChunk, folder.uploaderOptions...)
 		dataChunk := chunkUploader.allocateBuffer()
 
 		n, err := fillBuffer(content, dataChunk)
@@ -291,7 +325,7 @@ func (folder *Folder) PutObject(name string, content io.Reader) error {
 
 			tracelog.DebugLogger.Printf("Compose temporary chunks into an intermediate chunk %v\n", compositeChunkName)
 
-			if err := composeChunks(ctx, NewUploader(compositeChunk), tmpChunks); err != nil {
+			if err := composeChunks(ctx, NewUploader(compositeChunk, folder.uploaderOptions...), tmpChunks); err != nil {
 				return NewError(err, "Failed to compose temporary chunks into an intermediate chunk")
 			}
 
@@ -301,7 +335,7 @@ func (folder *Folder) PutObject(name string, content io.Reader) error {
 
 	tracelog.DebugLogger.Printf("Compose file %v from chunks\n", object.ObjectName())
 
-	if err := composeChunks(ctx, NewUploader(object), tmpChunks); err != nil {
+	if err := composeChunks(ctx, NewUploader(object, folder.uploaderOptions...), tmpChunks); err != nil {
 		return NewError(err, "Failed to compose temporary chunks into an object")
 	}
 
