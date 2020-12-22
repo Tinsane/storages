@@ -8,6 +8,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/wal-g/storages/storage"
 	"io"
+	"strconv"
 	"strings"
 )
 
@@ -32,6 +33,7 @@ const (
 	EndpointSourceSetting    = "S3_ENDPOINT_SOURCE"
 	EndpointPortSetting      = "S3_ENDPOINT_PORT"
 	LogLevel                 = "S3_LOG_LEVEL"
+	UseListObjectsV1         = "S3_USE_LIST_OBJECTS_V1"
 )
 
 var (
@@ -54,6 +56,7 @@ var (
 		UploadConcurrencySetting,
 		s3CertFile,
 		MaxPartSize,
+		UseListObjectsV1,
 	}
 )
 
@@ -81,6 +84,8 @@ type Folder struct {
 	Bucket   *string
 	Path     string
 	settings map[string]string
+
+	useListObjectsV1 bool
 }
 
 func NewFolder(uploader Uploader, s3API s3iface.S3API, bucket, path string) *Folder {
@@ -108,6 +113,14 @@ func ConfigureFolder(prefix string, settings map[string]string) (storage.Folder,
 	}
 	folder := NewFolder(*uploader, client, bucket, path)
 	folder.settings = settings
+
+	if strUseListObjectsV1, ok := settings[UseListObjectsV1]; ok {
+		folder.useListObjectsV1, err = strconv.ParseBool(strUseListObjectsV1)
+		if err != nil {
+			return nil, NewFolderError(err, "Invalid s3 list objects version setting")
+		}
+	}
+
 	return folder, nil
 }
 
@@ -158,17 +171,11 @@ func (folder *Folder) GetPath() string {
 }
 
 func (folder *Folder) ListFolder() (objects []storage.Object, subFolders []storage.Folder, err error) {
-	s3Objects := &s3.ListObjectsV2Input{
-		Bucket:    folder.Bucket,
-		Prefix:    aws.String(folder.Path),
-		Delimiter: aws.String("/"),
-	}
-
-	err = folder.S3API.ListObjectsV2Pages(s3Objects, func(files *s3.ListObjectsV2Output, lastPage bool) bool {
-		for _, prefix := range files.CommonPrefixes {
+	listFunc := func(commonPrefixes []*s3.CommonPrefix, contents []*s3.Object) {
+		for _, prefix := range commonPrefixes {
 			subFolders = append(subFolders, NewFolder(folder.uploader, folder.S3API, *folder.Bucket, *prefix.Prefix))
 		}
-		for _, object := range files.Contents {
+		for _, object := range contents {
 			// Some storages return root tar_partitions folder as a Key.
 			// We do not want to fail restoration due to this fact.
 			// Keep in mind that skipping files is very dangerous and any decision here must be weighted.
@@ -178,12 +185,46 @@ func (folder *Folder) ListFolder() (objects []storage.Object, subFolders []stora
 			objectRelativePath := strings.TrimPrefix(*object.Key, folder.Path)
 			objects = append(objects, storage.NewLocalObject(objectRelativePath, *object.LastModified, *object.Size))
 		}
-		return true
-	})
+	}
+
+	prefix := aws.String(folder.Path)
+	delimiter := aws.String("/")
+	if folder.useListObjectsV1 {
+		err = folder.listObjectsPagesV1(prefix, delimiter, listFunc)
+	} else {
+		err = folder.listObjectsPagesV2(prefix, delimiter, listFunc)
+	}
+
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "failed to list s3 folder: '%s'", folder.Path)
 	}
 	return objects, subFolders, nil
+}
+
+func (folder *Folder) listObjectsPagesV1(prefix *string, delimiter *string,
+	listFunc func(commonPrefixes []*s3.CommonPrefix, contents []*s3.Object)) error {
+	s3Objects := &s3.ListObjectsInput{
+		Bucket:    folder.Bucket,
+		Prefix:    prefix,
+		Delimiter: delimiter,
+	}
+	return folder.S3API.ListObjectsPages(s3Objects, func(files *s3.ListObjectsOutput, lastPage bool) bool {
+		listFunc(files.CommonPrefixes, files.Contents)
+		return true
+	})
+}
+
+func (folder *Folder) listObjectsPagesV2(prefix *string, delimiter *string,
+	listFunc func(commonPrefixes []*s3.CommonPrefix, contents []*s3.Object)) error {
+	s3Objects := &s3.ListObjectsV2Input{
+		Bucket:    folder.Bucket,
+		Prefix:    prefix,
+		Delimiter: delimiter,
+	}
+	return folder.S3API.ListObjectsV2Pages(s3Objects, func(files *s3.ListObjectsV2Output, lastPage bool) bool {
+		listFunc(files.CommonPrefixes, files.Contents)
+		return true
+	})
 }
 
 func (folder *Folder) DeleteObjects(objectRelativePaths []string) error {
