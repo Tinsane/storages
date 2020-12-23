@@ -88,12 +88,13 @@ type Folder struct {
 	useListObjectsV1 bool
 }
 
-func NewFolder(uploader Uploader, s3API s3iface.S3API, bucket, path string) *Folder {
+func NewFolder(uploader Uploader, s3API s3iface.S3API, bucket, path string, useListObjectsV1 bool) *Folder {
 	return &Folder{
-		uploader: uploader,
-		S3API:    s3API,
-		Bucket:   aws.String(bucket),
-		Path:     storage.AddDelimiterToPath(path),
+		uploader:         uploader,
+		S3API:            s3API,
+		Bucket:           aws.String(bucket),
+		Path:             storage.AddDelimiterToPath(path),
+		useListObjectsV1: useListObjectsV1,
 	}
 }
 
@@ -111,15 +112,16 @@ func ConfigureFolder(prefix string, settings map[string]string) (storage.Folder,
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to configure S3 uploader")
 	}
-	folder := NewFolder(*uploader, client, bucket, path)
-	folder.settings = settings
-
+	useListObjectsV1 := false
 	if strUseListObjectsV1, ok := settings[UseListObjectsV1]; ok {
-		folder.useListObjectsV1, err = strconv.ParseBool(strUseListObjectsV1)
+		useListObjectsV1, err = strconv.ParseBool(strUseListObjectsV1)
 		if err != nil {
 			return nil, NewFolderError(err, "Invalid s3 list objects version setting")
 		}
 	}
+
+	folder := NewFolder(*uploader, client, bucket, path, useListObjectsV1)
+	folder.settings = settings
 
 	return folder, nil
 }
@@ -163,7 +165,8 @@ func (folder *Folder) ReadObject(objectRelativePath string) (io.ReadCloser, erro
 }
 
 func (folder *Folder) GetSubFolder(subFolderRelativePath string) storage.Folder {
-	return NewFolder(folder.uploader, folder.S3API, *folder.Bucket, storage.JoinPath(folder.Path, subFolderRelativePath)+"/")
+	return NewFolder(folder.uploader, folder.S3API, *folder.Bucket,
+		storage.JoinPath(folder.Path, subFolderRelativePath)+"/", folder.useListObjectsV1)
 }
 
 func (folder *Folder) GetPath() string {
@@ -173,7 +176,8 @@ func (folder *Folder) GetPath() string {
 func (folder *Folder) ListFolder() (objects []storage.Object, subFolders []storage.Folder, err error) {
 	listFunc := func(commonPrefixes []*s3.CommonPrefix, contents []*s3.Object) {
 		for _, prefix := range commonPrefixes {
-			subFolders = append(subFolders, NewFolder(folder.uploader, folder.S3API, *folder.Bucket, *prefix.Prefix))
+			subFolders = append(subFolders, NewFolder(folder.uploader, folder.S3API, *folder.Bucket,
+				*prefix.Prefix, folder.useListObjectsV1))
 		}
 		for _, object := range contents {
 			// Some storages return root tar_partitions folder as a Key.
