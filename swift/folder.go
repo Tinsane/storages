@@ -1,7 +1,6 @@
 package swift
 
 import (
-	"bytes"
 	"github.com/wal-g/storages/storage"
 	"github.com/wal-g/tracelog"
 	"io"
@@ -120,7 +119,7 @@ func (folder *Folder) GetSubFolder(subFolderRelativePath string) storage.Folder 
 func (folder *Folder) ReadObject(objectRelativePath string) (io.ReadCloser, error) {
 	path := storage.JoinPath(folder.path, objectRelativePath)
 	//get the object from the cloud using full path
-	cBytes, err := folder.connection.ObjectGetBytes(folder.container.Name, path)
+	readContents, _, err := folder.connection.ObjectOpen(folder.container.Name, path, true, nil)
 	if err == swift.ObjectNotFound {
 		return nil, storage.NewObjectNotFoundError(path)
 	}
@@ -129,7 +128,6 @@ func (folder *Folder) ReadObject(objectRelativePath string) (io.ReadCloser, erro
 	} else {
 		//retrieved object from  the cloud
 	}
-	readContents := bytes.NewReader(cBytes)
 	return ioutil.NopCloser(readContents), nil
 }
 
