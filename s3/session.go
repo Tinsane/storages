@@ -88,7 +88,7 @@ func getDefaultConfig(settings map[string]string) *aws.Config {
 	// request.Retryer interface.
 	config := defaults.Get().Config.WithRegion(settings[RegionSetting])
 	config = request.WithRetryer(config, client.DefaultRetryer{NumMaxRetries: MaxRetries})
-
+	/*
 	provider := &credentials.StaticProvider{Value: credentials.Value{
 		AccessKeyID:     getFirstSettingOf(settings, []string{AccessKeyIdSetting, AccessKeySetting}),
 		SecretAccessKey: getFirstSettingOf(settings, []string{SecretAccessKeySetting, SecretKeySetting}),
@@ -103,7 +103,7 @@ func getDefaultConfig(settings map[string]string) *aws.Config {
 	})
 
 	config = config.WithCredentials(newCredentials)
-
+	*/
 	if logLevel, ok := settings[LogLevel]; ok {
 		config = config.WithLogLevel(func(s string) aws.LogLevelType {
 			switch s {
