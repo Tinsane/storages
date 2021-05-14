@@ -1,21 +1,21 @@
 package s3
 
 import (
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/client"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/defaults"
-	"github.com/aws/aws-sdk-go/aws/request"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/pkg/errors"
-	"github.com/wal-g/tracelog"
 	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/client"
+	"github.com/aws/aws-sdk-go/aws/defaults"
+	"github.com/aws/aws-sdk-go/aws/request"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/pkg/errors"
+	"github.com/wal-g/tracelog"
 )
 
 const DefaultPort = "443"
@@ -88,7 +88,7 @@ func getDefaultConfig(settings map[string]string) *aws.Config {
 	// request.Retryer interface.
 	config := defaults.Get().Config.WithRegion(settings[RegionSetting])
 	config = request.WithRetryer(config, client.DefaultRetryer{NumMaxRetries: MaxRetries})
-	
+
 	if logLevel, ok := settings[LogLevel]; ok {
 		config = config.WithLogLevel(func(s string) aws.LogLevelType {
 			switch s {
