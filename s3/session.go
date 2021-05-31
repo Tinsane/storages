@@ -7,6 +7,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/pkg/errors"
+	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -42,9 +44,13 @@ func getAWSRegion(s3Bucket string, config *aws.Config, settings map[string]strin
 	if region, ok := settings[RegionSetting]; ok {
 		return region, nil
 	}
+
+	hostAddr := url.Parse(*config.Endpoint).Host
+	host, _, _ := net.SplitHostPort(hostAddr)
+
 	if config.Endpoint == nil ||
 		*config.Endpoint == "" ||
-		strings.HasSuffix(*config.Endpoint, ".amazonaws.com") {
+		strings.HasSuffix(host, ".amazonaws.com") {
 		region, err := findBucketRegion(s3Bucket, config)
 		return region, errors.Wrapf(err, "%s is not set and s3:GetBucketLocation failed", RegionSetting)
 	} else {
