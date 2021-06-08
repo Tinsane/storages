@@ -2,11 +2,12 @@ package storage
 
 import (
 	"bytes"
-	"github.com/stretchr/testify/assert"
 	"io/ioutil"
 	"math/rand"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func RunFolderTest(storageFolder Folder, t *testing.T) {
@@ -22,7 +23,7 @@ func RunFolderTest(storageFolder Folder, t *testing.T) {
 	assert.NoError(t, err)
 	all, err := ioutil.ReadAll(readCloser)
 	assert.NoError(t, err)
-	assert.Equal(t, all, token)
+	assert.Equal(t, token, all)
 
 	err = sub1.PutObject("file1", strings.NewReader("data1"))
 	assert.NoError(t, err)
@@ -37,13 +38,13 @@ func RunFolderTest(storageFolder Folder, t *testing.T) {
 	objects, subFolders, err := storageFolder.ListFolder()
 	assert.NoError(t, err)
 	t.Log(subFolders[0].GetPath())
-	assert.Equal(t, objects[0].GetName(), "file0")
+	assert.Equal(t, "file0", objects[0].GetName())
 	assert.True(t, strings.HasSuffix(subFolders[0].GetPath(), "Sub1/"))
 
 	sublist, subFolders, err := sub1.ListFolder()
 	assert.NoError(t, err)
-	assert.Equal(t, len(subFolders), 0)
-	assert.Equal(t, len(sublist), 1)
+	assert.Equal(t, 0, len(subFolders))
+	assert.Equal(t, 1, len(sublist))
 	assert.Equal(t, sublist[0].GetName(), "file1")
 
 	data, err := sub1.ReadObject("file1")
