@@ -1,9 +1,8 @@
 package swift
 
 import (
-	"bytes"
-	"github.com/tinsane/storages/storage"
-	"github.com/tinsane/tracelog"
+	"github.com/wal-g/storages/storage"
+	"github.com/wal-g/tracelog"
 	"io"
 	"io/ioutil"
 	"os"
@@ -101,7 +100,7 @@ func (folder *Folder) ListFolder() (objects []storage.Object, subFolders []stora
 				}
 				//trim prefix to get object's standalone name
 				objName := strings.TrimPrefix(obj.Name, folder.path)
-				objects = append(objects, storage.NewLocalObject(objName, obj.LastModified))
+				objects = append(objects, storage.NewLocalObject(objName, obj.LastModified, obj.Bytes))
 			}
 		}
 		//return objectNames if a further iteration is required.
@@ -120,7 +119,7 @@ func (folder *Folder) GetSubFolder(subFolderRelativePath string) storage.Folder 
 func (folder *Folder) ReadObject(objectRelativePath string) (io.ReadCloser, error) {
 	path := storage.JoinPath(folder.path, objectRelativePath)
 	//get the object from the cloud using full path
-	cBytes, err := folder.connection.ObjectGetBytes(folder.container.Name, path)
+	readContents, _, err := folder.connection.ObjectOpen(folder.container.Name, path, true, nil)
 	if err == swift.ObjectNotFound {
 		return nil, storage.NewObjectNotFoundError(path)
 	}
@@ -129,7 +128,6 @@ func (folder *Folder) ReadObject(objectRelativePath string) (io.ReadCloser, erro
 	} else {
 		//retrieved object from  the cloud
 	}
-	readContents := bytes.NewReader(cBytes)
 	return ioutil.NopCloser(readContents), nil
 }
 

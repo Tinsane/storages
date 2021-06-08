@@ -1,7 +1,7 @@
 package storage
 
 import (
-	"github.com/tinsane/tracelog"
+	"github.com/wal-g/tracelog"
 	"io"
 	"path"
 	"strings"
@@ -40,7 +40,7 @@ func DeleteObjectsWhere(folder Folder, confirm bool, filter func(object1 Object)
 			tracelog.InfoLogger.Println("\twill be deleted: " + object.GetName())
 			filteredRelativePaths = append(filteredRelativePaths, object.GetName())
 		} else {
-			tracelog.InfoLogger.Println("\tskipped: " + object.GetName())
+			tracelog.DebugLogger.Println("\tskipped: " + object.GetName())
 		}
 	}
 	if len(filteredRelativePaths) == 0 {
@@ -75,7 +75,7 @@ func addPrefixToNames(objects []Object, folderPrefix string) []Object {
 	relativePathObjects := make([]Object, len(objects))
 	for i, object := range objects {
 		relativePath := path.Join(folderPrefix, object.GetName())
-		relativePathObjects[i] = NewLocalObject(relativePath, object.GetLastModified())
+		relativePathObjects[i] = NewLocalObject(relativePath, object.GetLastModified(), object.GetSize())
 	}
 	return relativePathObjects
 }

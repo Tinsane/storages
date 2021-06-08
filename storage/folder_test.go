@@ -3,8 +3,8 @@ package storage_test
 import (
 	"bytes"
 	"github.com/stretchr/testify/assert"
-	"github.com/tinsane/storages/memory"
-	"github.com/tinsane/storages/storage"
+	"github.com/wal-g/storages/memory"
+	"github.com/wal-g/storages/storage"
 	"strings"
 	"testing"
 )

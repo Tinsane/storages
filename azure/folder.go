@@ -9,16 +9,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tinsane/storages/storage"
-	"github.com/tinsane/tracelog"
+	"github.com/wal-g/storages/storage"
+	"github.com/wal-g/tracelog"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
+	"github.com/Azure/go-autorest/autorest/azure"
 	"github.com/pkg/errors"
 )
 
 const (
 	AccountSetting    = "AZURE_STORAGE_ACCOUNT"
 	AccessKeySetting  = "AZURE_STORAGE_ACCESS_KEY"
+	SasTokenSetting   = "AZURE_STORAGE_SAS_TOKEN"
+	EnvironmentName   = "AZURE_ENVIRONMENT_NAME"
 	BufferSizeSetting = "AZURE_BUFFER_SIZE"
 	MaxBuffersSetting = "AZURE_MAX_BUFFERS"
 	TryTimeoutSetting = "AZURE_TRY_TIMEOUT"
@@ -27,11 +30,14 @@ const (
 	minBuffers        = 1
 	defaultBuffers    = 3
 	defaultTryTimeout = 5
+	defaultEnvName    = "AzurePublicCloud"
 )
 
 var SettingList = []string{
 	AccountSetting,
 	AccessKeySetting,
+	SasTokenSetting,
+	EnvironmentName,
 	BufferSizeSetting,
 	MaxBuffersSetting,
 }
@@ -53,17 +59,29 @@ func NewFolder(
 }
 
 func ConfigureFolder(prefix string, settings map[string]string) (storage.Folder, error) {
-	var accountName, accountKey string
-	var ok bool
+	var accountName, accountKey, accountToken, environmentName string
+	var ok, usingToken bool
 	if accountName, ok = settings[AccountSetting]; !ok {
 		return nil, NewCredentialError(AccountSetting)
 	}
 	if accountKey, ok = settings[AccessKeySetting]; !ok {
-		return nil, NewCredentialError(AccessKeySetting)
+		if accountToken, usingToken = settings[SasTokenSetting]; !usingToken {
+			return nil, NewCredentialError(AccessKeySetting)
+		}
 	}
-	credential, err := azblob.NewSharedKeyCredential(accountName, accountKey)
-	if err != nil {
-		return nil, NewFolderError(err, "Unable to create credentials")
+	if environmentName, ok = settings[EnvironmentName]; !ok {
+		environmentName = defaultEnvName
+	}
+
+	var credential azblob.Credential
+	var err error
+	if usingToken {
+		credential = azblob.NewAnonymousCredential()
+	} else {
+		credential, err = azblob.NewSharedKeyCredential(accountName, accountKey)
+		if err != nil {
+			return nil, NewFolderError(err, "Unable to create credentials")
+		}
 	}
 
 	var tryTimeout int
@@ -81,9 +99,20 @@ func ConfigureFolder(prefix string, settings map[string]string) (storage.Folder,
 	if err != nil {
 		return nil, NewFolderError(err, "Unable to create container")
 	}
-	serviceURL, err := url.Parse(fmt.Sprintf("https://%s.blob.core.windows.net/%s", accountName, containerName))
-	if err != nil {
-		return nil, NewFolderError(err, "Unable to parse service URL")
+
+	storageEndpointSuffix := getStorageEndpointSuffix(environmentName)
+
+	var serviceURL *url.URL
+	if usingToken {
+		serviceURL, err = url.Parse(fmt.Sprintf("https://%s.blob.%s/%s%s", accountName, storageEndpointSuffix, containerName, accountToken))
+		if err != nil {
+			return nil, NewFolderError(err, "Unable to parse service URL with SAS token")
+		}
+	} else {
+		serviceURL, err = url.Parse(fmt.Sprintf("https://%s.blob.%s/%s", accountName, storageEndpointSuffix, containerName))
+		if err != nil {
+			return nil, NewFolderError(err, "Unable to parse service URL")
+		}
 	}
 	containerURL := azblob.NewContainerURL(*serviceURL, pipeLine)
 	path = storage.AddDelimiterToPath(path)
@@ -127,7 +156,7 @@ func (folder *Folder) ListFolder() (objects []storage.Object, subFolders []stora
 			objName := strings.TrimPrefix(blob.Name, folder.path)
 			updated := time.Time(blob.Properties.LastModified)
 
-			objects = append(objects, storage.NewLocalObject(objName, updated))
+			objects = append(objects, storage.NewLocalObject(objName, updated, *blob.Properties.ContentLength))
 		}
 
 		marker = blobs.NextMarker
@@ -215,4 +244,22 @@ func getUploadStreamToBlockBlobOptions(settings map[string]string) azblob.Upload
 		maxBuffers = defaultBuffers
 	}
 	return azblob.UploadStreamToBlockBlobOptions{MaxBuffers: maxBuffers, BufferSize: bufferSize}
+}
+
+// Function will get environment's name and return string with the environment's Azure storage account endpoint suffix.
+// Expected names AzureUSGovernmentCloud, AzureChinaCloud, AzureGermanCloud. If any other name is used the func will return
+// the Azure storage account endpoint suffix for AzurePublicCloud.
+func getStorageEndpointSuffix(environmentName string) string {
+	var storageEndpointSuffix string
+	switch environmentName {
+	case azure.USGovernmentCloud.Name:
+		storageEndpointSuffix = azure.USGovernmentCloud.StorageEndpointSuffix
+	case azure.ChinaCloud.Name:
+		storageEndpointSuffix = azure.ChinaCloud.StorageEndpointSuffix
+	case azure.GermanCloud.Name:
+		storageEndpointSuffix = azure.GermanCloud.StorageEndpointSuffix
+	default:
+		storageEndpointSuffix = azure.PublicCloud.StorageEndpointSuffix
+	}
+	return storageEndpointSuffix
 }
